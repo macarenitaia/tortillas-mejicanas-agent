@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: odoo-whatsapp-agent
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.index:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_API_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL_NAME
+        value: gpt-4o
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: ODOO_URL
+        value: https://real-to-digital-3d.odoo.com
+      - key: ODOO_DB
+        value: real-to-digital-3d
+      - key: ODOO_USERNAME
+        sync: false
+      - key: ODOO_PASSWORD
+        sync: false
+      - key: ODOO_API_KEY
+        sync: false
