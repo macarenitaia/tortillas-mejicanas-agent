@@ -5,6 +5,8 @@ from tools_supabase import SupabaseMemoryTool
 from langchain_openai import ChatOpenAI
 import os
 from config import OPENAI_API_KEY
+from datetime import datetime
+import pytz
 
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
@@ -42,10 +44,16 @@ sales_agent = Agent(
 
 def create_tasks(session_id, user_message, customer_context=""):
     
+    # Contexto Temporal
+    tz = pytz.timezone('Europe/Madrid')
+    now = datetime.now(tz)
+    date_context = f"Hoy es {now.strftime('%A, %d de %B de %Y, %H:%M')}. Ten muy en cuenta esta fecha y hora si el cliente te pide referencias temporales (ej. 'mañana', 'el próximo lunes') para calcular la fecha exacta para Odoo."
+
     identify_task = Task(
         description=f"1. Identificar si el cliente con el mensaje '{user_message}' ya existe en Odoo usando su número (si está disponible en el metadato de sesión).\n"
                     f"2. Recuperar el historial de Supabase para la sesión {session_id}.\n"
-                    f"3. Decidir si la consulta es de Soporte o de Ventas.",
+                    f"3. Decidir si la consulta es de Soporte o de Ventas.\n"
+                    f"NOTA TEMPORAL IMPORTANTE: {date_context}",
         expected_output="Un informe detallado sobre la identidad del cliente, su historial relevante y la clasificación de su intención.",
         agent=sales_agent
     )
