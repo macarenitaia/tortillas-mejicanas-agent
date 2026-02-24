@@ -88,33 +88,39 @@ def create_tasks(session_id, user_message, chat_history="", crm_context=""):
 # --- Crew ---
 
 def run_odoo_crew(session_id, user_message):
-    # 1. Guardar el mensaje del usuario en memoria a largo plazo
-    save_message(session_id, "usuario", user_message)
-    
-    # 2. Recuperar el historial reciente
-    chat_history = get_recent_messages(session_id, limit=6)
-    
-    # 3. Buscar proactivamente al cliente en Odoo para darle contexto a la IA
-    partner = odoo.search_partner_by_phone(session_id)
-    if partner:
-        crm_context = f"El usuario actual YA EXISTE en nuestro CRM de Odoo. Su nombre es: {partner['name']}, y su email es: {partner.get('email', 'N/A')}. Llámalo por su nombre para darle un trato VIP y NO le pidas su email ni nombre de nuevo."
-    else:
-        crm_context = "El usuario es NUEVO, no sabemos ni su nombre ni nada. Salúdalo cálidamente y cuando sea el momento sutil, averigua cómo se llama."
+    try:
+        # 1. Guardar el mensaje del usuario en memoria a largo plazo
+        save_message(session_id, "usuario", user_message)
+        
+        # 2. Recuperar el historial reciente
+        chat_history = get_recent_messages(session_id, limit=6)
+        
+        # 3. Buscar proactivamente al cliente en Odoo para darle contexto a la IA
+        partner = odoo.search_partner_by_phone(session_id)
+        if partner:
+            crm_context = f"El usuario actual YA EXISTE en nuestro CRM de Odoo. Su nombre es: {partner['name']}, y su email es: {partner.get('email', 'N/A')}. Llámalo por su nombre para darle un trato VIP y NO le pidas su email ni nombre de nuevo."
+        else:
+            crm_context = "El usuario es NUEVO, no sabemos ni su nombre ni nada. Salúdalo cálidamente y cuando sea el momento sutil, averigua cómo se llama."
 
-    # 4. Formular la tarea con el historial e identidad inyectados
-    tasks = create_tasks(session_id, user_message, chat_history, crm_context)
-    crew = Crew(
-        agents=[support_agent, sales_agent],
-        tasks=tasks,
-        process=Process.sequential,
-        verbose=True
-    )
-    
-    # 4. Ejecutar la inteligencia y obtener respuesta
-    result = crew.kickoff()
-    final_text = str(result)
-    
-    # 5. Guardar la respuesta definitiva del agente en memoria
-    save_message(session_id, "agente", final_text)
-    
-    return final_text
+        # 4. Formular la tarea con el historial e identidad inyectados
+        tasks = create_tasks(session_id, user_message, chat_history, crm_context)
+        crew = Crew(
+            agents=[support_agent, sales_agent],
+            tasks=tasks,
+            process=Process.sequential,
+            verbose=True
+        )
+        
+        # 5. Ejecutar la inteligencia y obtener respuesta
+        result = crew.kickoff()
+        final_text = str(result)
+        
+        # 6. Guardar la respuesta definitiva del agente en memoria
+        save_message(session_id, "agente", final_text)
+        
+        return final_text
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"CRASH IN RUN_ODOO_CREW: {error_details}")
+        return f"Error técnico interno del Agente. Info para el dev: {str(e)}"
