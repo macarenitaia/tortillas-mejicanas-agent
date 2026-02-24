@@ -8,15 +8,16 @@ class OdooClient:
         self.username = ODOO_USERNAME
         self.password = ODOO_API_KEY if ODOO_API_KEY else ODOO_PASSWORD
         self.uid = None
-        self._authenticate()
 
-    def _authenticate(self):
-        common = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/common')
-        self.uid = common.authenticate(self.db, self.username, self.password, {})
+    def _ensure_authenticated(self):
         if not self.uid:
-            raise Exception("Odoo authentication failed.")
+            common = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/common')
+            self.uid = common.authenticate(self.db, self.username, self.password, {})
+            if not self.uid:
+                raise Exception("Odoo authentication failed.")
 
     def _get_models(self):
+        self._ensure_authenticated()
         return xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/object')
 
     def search_partner_by_phone(self, phone):
