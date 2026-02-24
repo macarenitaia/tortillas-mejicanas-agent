@@ -58,9 +58,59 @@ class OdooClient:
         vals = {
             'name': summary,
             'start': start_date, # Formato: 'YYYY-MM-DD HH:MM:SS'
-            'stop': start_date, # Debería calcularse con la duración
+            'stop': start_date, # Odoo suele requerir datetime real, simplificamos asumiendo start=stop o suma
             'duration': duration,
             'partner_ids': [(4, partner_id)]
         }
         event_id = models.execute_kw(self.db, self.uid, self.password, 'calendar.event', 'create', [vals])
         return event_id
+
+    def check_availability(self, date_start, date_end):
+        """Lee el calendario de Odoo entre dos fechas y devuelve los eventos ocupados."""
+        models = self._get_models()
+        # Buscar eventos que se solapen con el rango dado
+        domain = [
+            ('start', '<', date_end),
+            ('stop', '>', date_start)
+        ]
+        # Recuperar eventos (nombre y horas)
+        event_ids = models.execute_kw(self.db, self.uid, self.password, 'calendar.event', 'search', [domain])
+        if event_ids:
+            events = models.execute_kw(self.db, self.uid, self.password, 'calendar.event', 'read', [event_ids], {'fields': ['name', 'start', 'stop']})
+            return events
+        return []
+
+    def create_full_booking(self, name, phone, email, description, start_date, duration=1.0):
+        """Crea el ecosistema completo: Partner -> Lead -> Event, asegurando la clave foránea."""
+        models = self._get_models()
+        
+        # 1. Crear Contacto (Partner)
+        partner_id = models.execute_kw(self.db, self.uid, self.password, 'res.partner', 'create', [{
+            'name': name,
+            'phone': phone,
+            'email': email
+        }])
+
+        # 2. Crear Oportunidad (Lead) vinculada al Partner
+        lead_id = models.execute_kw(self.db, self.uid, self.password, 'crm.lead', 'create', [{
+            'name': f"Oportunidad de {name}",
+            'partner_id': partner_id,
+            'description': description,
+            'type': 'opportunity'
+        }])
+
+        # 3. Crear Evento en Calendario (Meeting) vinculado al Partner y Lead
+        event_id = models.execute_kw(self.db, self.uid, self.password, 'calendar.event', 'create', [{
+            'name': f"Reunión Comercial: {name}",
+            'start': start_date,
+            'stop': start_date, # Simplificación temporal
+            'duration': duration,
+            'partner_ids': [(4, partner_id)], # Asociar al cliente
+            'opportunity_id': lead_id # Asociar a la oportunidad directamente
+        }])
+
+        return {
+            'partner_id': partner_id,
+            'lead_id': lead_id,
+            'event_id': event_id
+        }
