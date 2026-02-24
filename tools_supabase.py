@@ -5,22 +5,6 @@ import json
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-class SupabaseLoggerTool(BaseTool):
-    name: str = "Log Interaction"
-    description: str = "Logs an interaction or action taken by the agent into Supabase for monitoring. Provide agent_name, action, and metadata (json-like string)."
-
-    def _run(self, agent_name: str, action: str, metadata: str) -> str:
-        try:
-            data = {
-                "agent_name": agent_name,
-                "action": action,
-                "metadata": json.loads(metadata) if isinstance(metadata, str) else metadata
-            }
-            # Nota: Asumiendo que la tabla se llama 'interaction_logs' como en el plan
-            res = supabase.table("interaction_logs").insert(data).execute()
-            return "Action logged successfully in Supabase."
-        except Exception as e:
-            return f"Error logging in Supabase: {str(e)}"
 
 class SupabaseMemoryTool(BaseTool):
     name: str = "Save Conversation"

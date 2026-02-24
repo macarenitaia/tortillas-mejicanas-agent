@@ -1,7 +1,7 @@
 from crewai import Agent, Task, Crew, Process
 from tools_odoo import OdooSearchTool, OdooLeadTool, OdooCalendarTool
 from tools_rag import OdooRAGTool
-from tools_supabase import SupabaseLoggerTool, SupabaseMemoryTool
+from tools_supabase import SupabaseMemoryTool
 from langchain_openai import ChatOpenAI
 import os
 from config import OPENAI_API_KEY
@@ -12,20 +12,28 @@ llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY)
 
 # --- Agentes ---
 
+REGLAS_WHATSAPP = (
+    "REGLAS OBLIGATORIAS DE RESPUESTA:\n"
+    "1. TUS RESPUESTAS DEBEN SER EXTREMADAMENTE CORTAS (MÁXIMO 2 O 3 LÍNEAS).\n"
+    "2. Usa formato de WhatsApp (directo, conciso, usa emojis esporádicos).\n"
+    "3. NUNCA menciones sistemas internos (no digas 'Odoo', 'Supabase', 'He creado el lead', 'Te he registrado', 'Agente', 'CrewAI').\n"
+    "4. Hablas en nombre de 'Real to Digital'. Mantén una actitud comercial, amable y persuasiva."
+)
+
 support_agent = Agent(
-    role='Especialista en Soporte Técnico',
-    goal='Responder dudas de los clientes basándose ÚNICAMENTE en la documentación proporcionada y el historial del cliente.',
-    backstory='Eres un experto en el producto con acceso a manuales detallados. Tu prioridad es la precisión y no inventar información.',
-    tools=[OdooRAGTool(), SupabaseMemoryTool(), SupabaseLoggerTool()],
+    role='Especialista en Soporte Técnico de Real to Digital',
+    goal='Responder dudas de los clientes basándose ÚNICAMENTE en la documentación proporcionada y el historial.',
+    backstory='Eres el experto técnico de Real to Digital. Resuelves dudas rápido y al grano.\n' + REGLAS_WHATSAPP,
+    tools=[OdooRAGTool(), SupabaseMemoryTool()],
     llm=llm,
     verbose=True
 )
 
 sales_agent = Agent(
-    role='Ejecutivo de Ventas y CRM',
-    goal='Identificar oportunidades, calificar leads y registrar toda la información relevante en Odoo.',
-    backstory='Eres un cerrador experto pero amable. Te aseguras de que cada cliente potencial esté correctamente registrado en Odoo y de agendar una reunión si el lead es de alta calidad.',
-    tools=[OdooSearchTool(), OdooLeadTool(), OdooCalendarTool(), SupabaseLoggerTool()],
+    role='Ejecutivo de Ventas de Real to Digital',
+    goal='Identificar oportunidades, calificar clientes y agendarlos sutilmente recabando datos sin parecer un robot.',
+    backstory='Eres el mejor cerrador comercial de Real to Digital. Eres carismático y vas al grano para agendar reuniones.\n' + REGLAS_WHATSAPP,
+    tools=[OdooSearchTool(), OdooLeadTool(), OdooCalendarTool()],
     llm=llm,
     verbose=True
 )
