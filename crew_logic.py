@@ -1,5 +1,5 @@
 from crewai import Agent, Task, Crew, Process
-from tools_odoo import OdooSearchTool, OdooCheckAvailabilityTool, OdooFullBookingTool
+from tools_odoo import OdooSearchTool, OdooCheckAvailabilityTool, OdooFullBookingTool, odoo
 from tools_rag import OdooRAGTool
 from tools_supabase import SupabaseMemoryTool, save_message, get_recent_messages
 from langchain_openai import ChatOpenAI
@@ -47,7 +47,7 @@ sales_agent = Agent(
 
 # --- Tareas ---
 
-def create_tasks(session_id, user_message, chat_history=""):
+def create_tasks(session_id, user_message, chat_history="", crm_context=""):
     
     # Contexto Temporal con soporte UTC
     tz = pytz.timezone('Europe/Madrid')
@@ -61,6 +61,7 @@ def create_tasks(session_id, user_message, chat_history=""):
     identify_task = Task(
         description=f"Analiza si debemos orientar la conversación a Soporte o Comercial.\n"
                     f"NOTA TEMPORAL IMPORTANTE: {date_context}\n\n"
+                    f"--- ESTADO DEL CLIENTE EN CRM ---\n{crm_context}\n\n"
                     f"--- HISTORIAL DE LA CONVERSACIÓN ---\n{chat_history}\n-----------------------------------\n"
                     f"El último mensaje del usuario es: '{user_message}'",
         expected_output="Un informe detallado sobre la identidad del cliente, los datos que YA ha proporcionado en el historial, y la clasificación de su intención.",
@@ -93,8 +94,15 @@ def run_odoo_crew(session_id, user_message):
     # 2. Recuperar el historial reciente
     chat_history = get_recent_messages(session_id, limit=6)
     
-    # 3. Formular la tarea con el historial inyectado
-    tasks = create_tasks(session_id, user_message, chat_history)
+    # 3. Buscar proactivamente al cliente en Odoo para darle contexto a la IA
+    partner = odoo.search_partner_by_phone(session_id)
+    if partner:
+        crm_context = f"El usuario actual YA EXISTE en nuestro CRM de Odoo. Su nombre es: {partner['name']}, y su email es: {partner.get('email', 'N/A')}. Llámalo por su nombre para darle un trato VIP y NO le pidas su email ni nombre de nuevo."
+    else:
+        crm_context = "El usuario es NUEVO, no sabemos ni su nombre ni nada. Salúdalo cálidamente y cuando sea el momento sutil, averigua cómo se llama."
+
+    # 4. Formular la tarea con el historial e identidad inyectados
+    tasks = create_tasks(session_id, user_message, chat_history, crm_context)
     crew = Crew(
         agents=[support_agent, sales_agent],
         tasks=tasks,
