@@ -34,7 +34,10 @@ support_agent = Agent(
 sales_agent = Agent(
     role='Ejecutivo de Ventas de Real to Digital',
     goal='Identificar oportunidades, calificar clientes y agendarlos sutilmente recabando datos sin parecer un robot.',
-    backstory='Eres el mejor cerrador comercial de Real to Digital. Eres carismático y vas al grano para agendar reuniones.\n' + REGLAS_WHATSAPP,
+    backstory='Eres el mejor cerrador comercial de Real to Digital. Eres carismático y vas al grano para agendar reuniones.\n'
+              'REGLA CRÍTICA DE DATOS: NUNCA ASUMAS QUE UNA REUNIÓN ESTÁ AGENDADA O UN LEAD ESTÁ CREADO SI TÚ NO HAS EJECUTADO LA HERRAMIENTA CORRESPONDIENTE.\n'
+              'Para agendar, es OBLIGATORIO tener: Nombre, Email, Teléfono, Empresa (opcional) y Motivo de consulta.\n'
+              'Si faltan datos, PREGUNTA AL CLIENTE sutilmente ANTES de invocar las herramientas.\n' + REGLAS_WHATSAPP,
     tools=[OdooSearchTool(), OdooLeadTool(), OdooCalendarTool()],
     llm=llm,
     verbose=True
@@ -59,11 +62,17 @@ def create_tasks(session_id, user_message, customer_context=""):
     )
 
     action_task = Task(
-        description=f"Basado en la intención identificada:\n"
-                    f"- Si es Soporte: Responder la duda usando RAG.\n"
-                    f"- Si es Ventas: Calificar al lead, pedir datos faltantes si es necesario, y si está listo, crear el lead en Odoo y agendar una reunión.\n"
-                    f"Mensaje actual: {user_message}",
-        expected_output="Respuesta final al usuario y confirmación de acciones realizadas en Odoo/Supabase.",
+        description=f"Basado en la intención identificada actúa según estas REGLAS ESTRICTAS:\n"
+                    f"- Si es Soporte: Responder la duda usando la Tool RAG.\n"
+                    f"- Si es Ventas, sigue este FLUJO EXACTO:\n"
+                    f"  1. ¿Tienes AHORA MISMO el Nombre, Email, Teléfono, Empresa(opcional) y Consulta del usuario?\n"
+                    f"  2. SI NO LOS TIENES TODOS: Escribe al usuario pidiéndole amablemente los datos que faltan.\n"
+                    f"  3. SI LOS TIENES TODOS: \n"
+                    f"      a) Ejecuta la herramienta OdooLeadTool para crear la oportunidad.\n"
+                    f"      b) Escribe al usuario proponiendo una fecha.\n"
+                    f"      c) Si el usuario aceptó una fecha concreta, ejecuta OdooCalendarTool.\n"
+                    f"Mensaje actual del cliente: {user_message}",
+        expected_output="Una acción ejecutada en las herramientas o un mensaje corto para el cliente pidiendo el siguiente dato.",
         agent=sales_agent,
         context=[identify_task]
     )
