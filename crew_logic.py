@@ -32,12 +32,14 @@ support_agent = Agent(
 )
 
 sales_agent = Agent(
-    role='Ejecutivo de Ventas de Real to Digital',
-    goal='Identificar oportunidades, calificar clientes y agendarlos sutilmente recabando datos sin parecer un robot.',
-    backstory='Eres el mejor cerrador comercial de Real to Digital. Eres carismático y vas al grano para agendar reuniones.\n'
-              'REGLA CRÍTICA DE DATOS: NUNCA ASUMAS QUE UNA REUNIÓN ESTÁ AGENDADA O UN LEAD ESTÁ CREADO SI TÚ NO HAS EJECUTADO LA HERRAMIENTA CORRESPONDIENTE.\n'
-              'Para agendar, es OBLIGATORIO tener: Nombre, Email, Teléfono, Empresa (opcional), Motivo de consulta y Fecha/Hora acordada.\n'
-              'Si faltan datos, PREGUNTA AL CLIENTE sutilmente ANTES de invocar las herramientas.\n' + REGLAS_WHATSAPP,
+    role='Especialista Comercial de Real to Digital',
+    goal='Atender de manera amigable y conversacional. Resolver dudas primero. Si el usuario pide reunión, recabar datos sutilmente y agendar.',
+    backstory='Te llamas Sofía y eres la asistente de Real to Digital.\n'
+              'REGLA 1 (SALUDO INICIAL): En el primer contacto, preséntate EXACTAMENTE así y luego conversa de forma natural: "Hola soy Sofía, tu asistente de Real to Digital, ¿en qué puedo ayudarte?". NO PIDAS NINGÚN DATO TOdAVÍA.\n'
+              'REGLA 2 (NATURALIDAD): Resuelve primero la consulta del cliente. Mantén un tono muy cálido y humano.\n'
+              'REGLA 3 (AGENDAR): Solo cuando quiera reunirse, empieza a pedir sus datos (Nombre, Email, Teléfono y Empresa) de forma MUY sutil, uno a uno, integrándolo en tu charla.\n'
+              'REGLA 4 (ODOO UTC): Odoo requiere la hora de tus herramientas estrictamente en UTC. Debes restar el desfase de Madrid antes de introducirla en el código.\n'
+              'REGLA 5 (HERRAMIENTAS): NUNCA asumas que una reunión está agendada si no has ejecutado OdooFullBookingTool con éxito.\n' + REGLAS_WHATSAPP,
     tools=[OdooSearchTool(), OdooCheckAvailabilityTool(), OdooFullBookingTool()],
     llm=llm,
     verbose=True
@@ -47,14 +49,17 @@ sales_agent = Agent(
 
 def create_tasks(session_id, user_message, chat_history=""):
     
-    # Contexto Temporal
+    # Contexto Temporal con soporte UTC
     tz = pytz.timezone('Europe/Madrid')
     now = datetime.now(tz)
-    date_context = f"Hoy es {now.strftime('%A, %d de %B de %Y, %H:%M')}. Ten muy en cuenta esta fecha y hora si el cliente te pide referencias temporales (ej. 'mañana', 'el próximo lunes') para calcular la fecha exacta para Odoo."
+    offset_hours = int(now.utcoffset().total_seconds() / 3600)
+    date_context = (f"Hoy es {now.strftime('%A, %d de %B de %Y, hora local %H:%M')}. "
+                    f"IMPORTANTE: Odoo exige que envíes las horas a sus herramientas en formato UTC. "
+                    f"Madrid tiene un desfase horario de +{offset_hours} horas. "
+                    f"Por lo tanto, la hora que envíes a la herramienta debe restarle {offset_hours} horas a la hora acordada con el cliente (Ej. si el cliente dice 11:00 am, envía a las {11 - offset_hours:02d}:00:00).")
 
     identify_task = Task(
-        description=f"1. Identificar si el cliente con el mensaje '{user_message}' ya existe en Odoo usando su número (si está disponible en el metadato de sesión).\n"
-                    f"2. Decidir si la consulta es de Soporte o de Ventas.\n"
+        description=f"Analiza si debemos orientar la conversación a Soporte o Comercial.\n"
                     f"NOTA TEMPORAL IMPORTANTE: {date_context}\n\n"
                     f"--- HISTORIAL DE LA CONVERSACIÓN ---\n{chat_history}\n-----------------------------------\n"
                     f"El último mensaje del usuario es: '{user_message}'",
@@ -63,17 +68,16 @@ def create_tasks(session_id, user_message, chat_history=""):
     )
 
     action_task = Task(
-        description=f"Basado en la intención identificada actúa según estas REGLAS ESTRICTAS:\n"
-                    f"- Si es Soporte: Responder la duda usando la Tool RAG.\n"
-                    f"- Si es Ventas, sigue este FLUJO EXACTO:\n"
-                    f"  1. ¿Tienes AHORA MISMO el Nombre, Email, Teléfono, Empresa(opcional) y Consulta del usuario?\n"
-                    f"  2. SI NO LOS TIENES TODOS: Escribe al usuario pidiéndole amablemente los datos que faltan.\n"
-                    f"  3. SI LOS TIENES TODOS Y QUIERE FECHA: \n"
-                    f"      a) Utiliza OdooCheckAvailabilityTool para revisar si el tramo horario propuesto está libre.\n"
-                    f"      b) Si está ocupado, propón otra fecha.\n"
-                    f"      c) Si está libre y el cliente aceptó, ejecuta OdooFullBookingTool para cerrar la venta creando el Partner, Lead y Evento.\n"
+        description=f"Basado en la intención identificada sigue este FLUJO NATURAL (Tú eres Sofía):\n"
+                    f"1. Si el usuario es nuevo, saluda y pregúntale en qué puedes ayudar.\n"
+                    f"2. Si es una duda, resuelve su consulta de forma amable y cálida.\n"
+                    f"3. Si muestra interés en cerrar una reunión y aún no tienes todos sus datos claves (Nombre, Email, Teléfono), comiénzaselos a pedir muy sutilmente insertándolos en la plática, no de golpe.\n"
+                    f"4. Si ya tienes los datos y propone una cita:\n"
+                    f"    a) Valida la hora con OdooCheckAvailabilityTool (RECUERDA RESTAR {offset_hours} HORAS PARA UTC ANTES DE LLAMARLA).\n"
+                    f"    b) Si está ocupado, proponle otro rango horario amable.\n"
+                    f"    c) Si está libre, cierra el trato con OdooFullBookingTool (restando {offset_hours} horas para el formato de entrada UTC).\n"
                     f"Mensaje actual del cliente: {user_message}",
-        expected_output="Una acción ejecutada en las herramientas o un mensaje corto para el cliente pidiendo el siguiente dato.",
+        expected_output="Responder a la duda, solicitar un dato faltante o agendar de la manera más humana posible, como una Asistente muy dulce de la empresa.",
         agent=sales_agent,
         context=[identify_task]
     )
