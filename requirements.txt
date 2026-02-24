@@ -1,0 +1,8 @@
+crewai
+crewai-tools
+supabase
+langchain-openai
+fastapi
+uvicorn
+python-dotenv
+httpx

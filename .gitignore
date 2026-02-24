@@ -1,0 +1,25 @@
+# Entornos Virtuales
+venv/
+.env/
+env/
+.venv/
+crewai_venv/
+
+# Cache y archivos temporales de Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Entornos del SO y editores
+.DS_Store
+.vscode/
+.idea/
+
+# Credenciales y archivos locales (IMPORTANTE)
+.env
+.env.local
+config.py  # Si en el futuro ponemos los tokens directamente aquí. Aunque está bien si solo son placeholders.
