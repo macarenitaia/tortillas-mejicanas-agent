@@ -2,8 +2,10 @@ from supabase import create_client, Client
 from config import SUPABASE_URL, SUPABASE_KEY
 from crewai.tools import BaseTool
 import json
-
 import uuid
+
+# Inicializar cliente Supabase globalmente
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def _get_tenant_id() -> str:
     """Busca o crea el tenant_id de 'Real to Digital' en la tabla organizations."""
