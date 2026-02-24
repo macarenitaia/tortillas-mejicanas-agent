@@ -1,7 +1,7 @@
 from crewai import Agent, Task, Crew, Process
 from tools_odoo import OdooSearchTool, OdooLeadTool, OdooCalendarTool
 from tools_rag import OdooRAGTool
-from tools_supabase import SupabaseMemoryTool
+from tools_supabase import SupabaseMemoryTool, save_message, get_recent_messages
 from langchain_openai import ChatOpenAI
 import os
 from config import OPENAI_API_KEY
@@ -45,7 +45,7 @@ sales_agent = Agent(
 
 # --- Tareas ---
 
-def create_tasks(session_id, user_message, customer_context=""):
+def create_tasks(session_id, user_message, chat_history=""):
     
     # Contexto Temporal
     tz = pytz.timezone('Europe/Madrid')
@@ -54,10 +54,11 @@ def create_tasks(session_id, user_message, customer_context=""):
 
     identify_task = Task(
         description=f"1. Identificar si el cliente con el mensaje '{user_message}' ya existe en Odoo usando su número (si está disponible en el metadato de sesión).\n"
-                    f"2. Recuperar el historial de Supabase para la sesión {session_id}.\n"
-                    f"3. Decidir si la consulta es de Soporte o de Ventas.\n"
-                    f"NOTA TEMPORAL IMPORTANTE: {date_context}",
-        expected_output="Un informe detallado sobre la identidad del cliente, su historial relevante y la clasificación de su intención.",
+                    f"2. Decidir si la consulta es de Soporte o de Ventas.\n"
+                    f"NOTA TEMPORAL IMPORTANTE: {date_context}\n\n"
+                    f"--- HISTORIAL DE LA CONVERSACIÓN ---\n{chat_history}\n-----------------------------------\n"
+                    f"El último mensaje del usuario es: '{user_message}'",
+        expected_output="Un informe detallado sobre la identidad del cliente, los datos que YA ha proporcionado en el historial, y la clasificación de su intención.",
         agent=sales_agent
     )
 
@@ -82,11 +83,26 @@ def create_tasks(session_id, user_message, customer_context=""):
 # --- Crew ---
 
 def run_odoo_crew(session_id, user_message):
-    tasks = create_tasks(session_id, user_message)
+    # 1. Guardar el mensaje del usuario en memoria a largo plazo
+    save_message(session_id, "usuario", user_message)
+    
+    # 2. Recuperar el historial reciente
+    chat_history = get_recent_messages(session_id, limit=6)
+    
+    # 3. Formular la tarea con el historial inyectado
+    tasks = create_tasks(session_id, user_message, chat_history)
     crew = Crew(
         agents=[support_agent, sales_agent],
         tasks=tasks,
         process=Process.sequential,
         verbose=True
     )
-    return crew.kickoff()
+    
+    # 4. Ejecutar la inteligencia y obtener respuesta
+    result = crew.kickoff()
+    final_text = str(result)
+    
+    # 5. Guardar la respuesta definitiva del agente en memoria
+    save_message(session_id, "agente", final_text)
+    
+    return final_text
