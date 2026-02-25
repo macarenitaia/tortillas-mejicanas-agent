@@ -3,6 +3,7 @@ from tools_odoo import OdooSearchTool, OdooCheckAvailabilityTool, OdooFullBookin
 from tools_rag import OdooRAGTool
 from tools_supabase import SupabaseMemoryTool, save_message, get_recent_messages
 from langchain_openai import ChatOpenAI
+from logger import get_logger
 import os
 from config import OPENAI_API_KEY, OPENAI_MODEL_NAME
 from datetime import datetime
@@ -10,6 +11,7 @@ import pytz
 
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
+log = get_logger("crew_logic")
 llm = ChatOpenAI(model=OPENAI_MODEL_NAME, api_key=OPENAI_API_KEY)
 
 # --- Agentes ---
@@ -121,5 +123,5 @@ def run_odoo_crew(session_id, user_message):
         return final_text
     except Exception as e:
         import traceback
-        print(f"[CRASH] run_odoo_crew: {traceback.format_exc()}")
+        log.error(f"run_odoo_crew crash: {traceback.format_exc()}")
         return "Disculpa, estoy experimentando dificultades técnicas. Por favor, inténtalo de nuevo en unos minutos. 🙏"

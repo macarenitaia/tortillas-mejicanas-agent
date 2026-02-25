@@ -1,8 +1,10 @@
 from supabase import create_client, Client
 from config import SUPABASE_URL, SUPABASE_KEY
 from crewai.tools import BaseTool
-import json
-import uuid
+from typing import Optional
+from logger import get_logger
+
+log = get_logger("supabase_tools")
 
 # Inicializar cliente Supabase globalmente
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -15,21 +17,22 @@ def _mask_phone(phone: str) -> str:
     return "***"
 
 
-def _get_tenant_id() -> str:
-    """Busca o crea el tenant_id de 'Real to Digital' en la tabla organizations."""
+def _get_tenant_id() -> Optional[str]:
+    """Busca o crea el tenant_id de 'Real to Digital'."""
     try:
         res = supabase.table("organizations").select("id").eq("name", "Real to Digital").limit(1).execute()
         if res.data and len(res.data) > 0:
             return res.data[0]["id"]
         
         insert_res = supabase.table("organizations").insert({"name": "Real to Digital"}).execute()
-        print("[Supabase] Nuevo Tenant creado: Real to Digital")
+        log.info("Tenant 'Real to Digital' created")
         return insert_res.data[0]["id"]
     except Exception as e:
-        print(f"[Supabase ERROR] tenant_id: {type(e).__name__}")
+        log.error(f"tenant_id error: {type(e).__name__}")
         return None
 
-def _get_or_create_lead_id(phone: str, tenant_id: str) -> str:
+
+def _get_or_create_lead_id(phone: str, tenant_id: str) -> Optional[str]:
     """Busca o crea un lead_id real en la tabla leads."""
     if not tenant_id:
         return None
@@ -39,23 +42,17 @@ def _get_or_create_lead_id(phone: str, tenant_id: str) -> str:
         if res.data and len(res.data) > 0:
             return res.data[0]["id"]
             
-        new_lead = {
-            "name": "Cliente de WhatsApp",
-            "phone": phone,
-            "tenant_id": tenant_id
-        }
+        new_lead = {"name": "Cliente de WhatsApp", "phone": phone, "tenant_id": tenant_id}
         insert_res = supabase.table("leads").insert(new_lead).execute()
-        print(f"[Supabase] Nuevo Lead para {_mask_phone(phone)}")
+        log.info(f"Lead created for {_mask_phone(phone)}")
         return insert_res.data[0]["id"]
     except Exception as e:
-        print(f"[Supabase ERROR] lead_id: {type(e).__name__}")
+        log.error(f"lead_id error: {type(e).__name__}")
         return None
 
-def save_message(session_phone: str, role: str, content: str):
-    """Guarda un mensaje en la tabla 'messages'.
-       session_phone = número de whatsapp.
-       role = 'user' o 'assistant'.
-    """
+
+def save_message(session_phone: str, role: str, content: str) -> None:
+    """Guarda un mensaje en la tabla 'messages'."""
     try:
         db_role = 'assistant' if role.lower() in ('agente', 'assistant') else 'user'
         
@@ -63,7 +60,7 @@ def save_message(session_phone: str, role: str, content: str):
         lead_id = _get_or_create_lead_id(session_phone, tenant_id)
         
         if not tenant_id or not lead_id:
-            print("[Supabase] Abortando guardado: falta tenant/lead.")
+            log.warning("Aborted save: missing tenant/lead")
             return
 
         data = {
@@ -73,12 +70,13 @@ def save_message(session_phone: str, role: str, content: str):
             "content": content
         }
         supabase.table("messages").insert(data).execute()
-        print(f"[Supabase] Mensaje '{db_role}' guardado para {_mask_phone(session_phone)}")
+        log.info(f"Message '{db_role}' saved for {_mask_phone(session_phone)}")
     except Exception as e:
-        print(f"[Supabase ERROR] save_message: {type(e).__name__}")
+        log.error(f"save_message error: {type(e).__name__}")
+
 
 def get_recent_messages(session_phone: str, limit: int = 5) -> str:
-    """Recupera los últimos N mensajes convirtiendo el teléfono a lead_id UUID."""
+    """Recupera los últimos N mensajes para contexto conversacional."""
     try:
         tenant_id = _get_tenant_id()
         lead_id = _get_or_create_lead_id(session_phone, tenant_id)
@@ -86,7 +84,13 @@ def get_recent_messages(session_phone: str, limit: int = 5) -> str:
         if not tenant_id or not lead_id:
             return "No hay historial previo de conversación."
         
-        res = supabase.table("messages").select("role, content").eq("lead_id", lead_id).eq("tenant_id", tenant_id).order("created_at", desc=True).limit(limit).execute()
+        res = (supabase.table("messages")
+               .select("role, content")
+               .eq("lead_id", lead_id)
+               .eq("tenant_id", tenant_id)
+               .order("created_at", desc=True)
+               .limit(limit)
+               .execute())
         
         if not res.data:
             return "No hay historial previo de conversación."
@@ -98,12 +102,14 @@ def get_recent_messages(session_phone: str, limit: int = 5) -> str:
         
         return messages_str
     except Exception as e:
-        print(f"[Supabase ERROR] get_recent_messages: {type(e).__name__}")
+        log.error(f"get_recent_messages error: {type(e).__name__}")
         return "No se pudo recuperar el historial."
 
+
 class SupabaseMemoryTool(BaseTool):
+    """Herramienta de CrewAI para guardar mensajes en Supabase."""
     name: str = "Save Conversation"
-    description: str = "Saves a message to the conversation history in Supabase for long-term memory. Provide session_id, role (agent/user), and content."
+    description: str = "Saves a message to conversation history. Provide session_id, role (agent/user), and content."
 
     def _run(self, session_id: str, role: str, content: str) -> str:
         save_message(session_id, role, content)
