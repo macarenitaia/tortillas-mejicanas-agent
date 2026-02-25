@@ -36,7 +36,7 @@ def _verify_meta_signature(request_body: bytes, signature_header: str) -> bool:
     if not signature_header:
         return False
     
-    expected = "sha256=" + hmac.new(
+    expected = "sha256=" + hmac.HMAC(
         WHATSAPP_APP_SECRET.encode(), request_body, hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(expected, signature_header)
