@@ -113,6 +113,16 @@ message_dedup = MessageDedup(ttl_seconds=300)
 def root():
     return {"status": "ok", "service": "odoo-whatsapp-agent", "version": "1.0.0"}
 
+@app.get("/api/debug")
+async def debug_crew():
+    """TEMPORAL: ejecuta run_odoo_crew y devuelve el resultado o traceback completo."""
+    import traceback
+    try:
+        result = await asyncio.to_thread(run_odoo_crew, "debug_test_session", "hola")
+        return {"status": "ok", "result": str(result)[:500]}
+    except Exception as e:
+        return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
 @app.get("/api/health")
 async def health_check():
     """Health check con estado de dependencias externas."""
