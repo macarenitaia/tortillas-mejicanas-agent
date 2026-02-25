@@ -1,5 +1,6 @@
 from crewai import Agent, Task, Crew, Process
 from tools_odoo import OdooSearchTool, OdooCheckAvailabilityTool, OdooFullBookingTool, odoo
+from tools_email import SendEmailTool
 from tools_rag import OdooRAGTool
 from tools_supabase import SupabaseMemoryTool, save_message, get_recent_messages
 from langchain_openai import ChatOpenAI
@@ -41,8 +42,9 @@ sales_agent = Agent(
               'REGLA 2 (NATURALIDAD): Resuelve primero la consulta del cliente. Mantén un tono muy cálido y humano.\n'
               'REGLA 3 (AGENDAR): Solo cuando quiera reunirse, empieza a pedir sus datos (Nombre, Email, Teléfono y Empresa) de forma MUY sutil, uno a uno, integrándolo en tu charla.\n'
               'REGLA 4 (ODOO UTC): Odoo requiere la hora de tus herramientas estrictamente en UTC. Debes restar el desfase de Madrid antes de introducirla en el código.\n'
-              'REGLA 5 (HERRAMIENTAS): NUNCA asumas que una reunión está agendada si no has ejecutado OdooFullBookingTool con éxito.\n' + REGLAS_WHATSAPP,
-    tools=[OdooSearchTool(), OdooCheckAvailabilityTool(), OdooFullBookingTool()],
+              'REGLA 5 (HERRAMIENTAS): NUNCA asumas que una reunión está agendada si no has ejecutado OdooFullBookingTool con éxito.\n'
+              'REGLA 6 (EMAIL): Después de agendar UNA REUNIÓN CON ÉXITO usando OdooFullBookingTool, SIEMPRE envía un email de confirmación usando SendEmailTool con el email del cliente, un asunto profesional y un cuerpo con la fecha, hora y detalles de la reunión. El tono del email debe ser profesional pero cálido.\n' + REGLAS_WHATSAPP,
+    tools=[OdooSearchTool(), OdooCheckAvailabilityTool(), OdooFullBookingTool(), SendEmailTool()],
     llm=llm,
     verbose=True
 )

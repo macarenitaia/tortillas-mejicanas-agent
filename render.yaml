@@ -33,3 +33,7 @@ services:
         sync: false
       - key: ODOO_API_KEY
         sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: "Sofía de Real to Digital <sofia@realtodigital3d.com>"
