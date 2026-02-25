@@ -1,4 +1,5 @@
 import xmlrpc.client
+import time
 from config import ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, ODOO_API_KEY
 
 class OdooClient:
@@ -12,17 +13,39 @@ class OdooClient:
     def _ensure_authenticated(self):
         if not self.uid:
             common = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/common')
-            self.uid = common.authenticate(self.db, self.username, self.password, {})
-            if not self.uid:
-                raise Exception("Odoo authentication failed.")
+            for attempt in range(3):
+                try:
+                    self.uid = common.authenticate(self.db, self.username, self.password, {})
+                    if not self.uid:
+                        raise Exception("Odoo authentication failed.")
+                    break
+                except xmlrpc.client.ProtocolError as e:
+                    if e.errcode == 429 and attempt < 2:
+                        time.sleep(2 ** attempt)
+                    else:
+                        raise
 
     def _get_models(self):
         self._ensure_authenticated()
         return xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/object')
 
+    def _execute_kw_with_retry(self, model, method, *args, **kwargs):
+        """Ejecuta llamadas a Odoo XML-RPC con reintento y espera en caso de Rate Limiting (429)."""
+        models = self._get_models()
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                return models.execute_kw(self.db, self.uid, self.password, model, method, *args, **kwargs)
+            except xmlrpc.client.ProtocolError as e:
+                if e.errcode == 429 and attempt < max_retries - 1:
+                    wait_time = 2 ** attempt # Exponential backoff: 1s, 2s
+                    print(f"[Odoo API] Límite alcanzado (429). Reintentando en {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    raise
+
     def search_partner_by_phone(self, phone):
         """Busca un partner por teléfono o móvil."""
-        models = self._get_models()
         # Limpiar el teléfono para la búsqueda (solo dígitos)
         clean_phone = ''.join(filter(str.isdigit, phone))
         
@@ -32,16 +55,15 @@ class OdooClient:
             ('mobile', 'ilike', clean_phone)
         ]
         
-        partner_ids = models.execute_kw(self.db, self.uid, self.password, 'res.partner', 'search', [domain])
+        partner_ids = self._execute_kw_with_retry('res.partner', 'search', [domain])
         
         if partner_ids:
-            partners = models.execute_kw(self.db, self.uid, self.password, 'res.partner', 'read', [partner_ids], {'fields': ['name', 'email', 'phone', 'mobile']})
+            partners = self._execute_kw_with_retry('res.partner', 'read', [partner_ids], {'fields': ['name', 'email', 'phone', 'mobile']})
             return partners[0]
         return None
 
     def create_lead(self, name, phone, email=None, description=None):
         """Crea un lead en el CRM."""
-        models = self._get_models()
         vals = {
             'name': name,
             'phone': phone,
@@ -49,12 +71,11 @@ class OdooClient:
             'description': description,
             'type': 'opportunity'
         }
-        lead_id = models.execute_kw(self.db, self.uid, self.password, 'crm.lead', 'create', [vals])
+        lead_id = self._execute_kw_with_retry('crm.lead', 'create', [vals])
         return lead_id
 
     def schedule_meeting(self, partner_id, summary, start_date, duration=1.0):
         """Agenda un evento en el calendario."""
-        models = self._get_models()
         vals = {
             'name': summary,
             'start': start_date, # Formato: 'YYYY-MM-DD HH:MM:SS'
@@ -62,37 +83,35 @@ class OdooClient:
             'duration': duration,
             'partner_ids': [(4, partner_id)]
         }
-        event_id = models.execute_kw(self.db, self.uid, self.password, 'calendar.event', 'create', [vals])
+        event_id = self._execute_kw_with_retry('calendar.event', 'create', [vals])
         return event_id
 
     def check_availability(self, date_start, date_end):
         """Lee el calendario de Odoo entre dos fechas y devuelve los eventos ocupados."""
-        models = self._get_models()
         # Buscar eventos que se solapen con el rango dado
         domain = [
             ('start', '<', date_end),
             ('stop', '>', date_start)
         ]
         # Recuperar eventos (nombre y horas)
-        event_ids = models.execute_kw(self.db, self.uid, self.password, 'calendar.event', 'search', [domain])
+        event_ids = self._execute_kw_with_retry('calendar.event', 'search', [domain])
         if event_ids:
-            events = models.execute_kw(self.db, self.uid, self.password, 'calendar.event', 'read', [event_ids], {'fields': ['name', 'start', 'stop']})
+            events = self._execute_kw_with_retry('calendar.event', 'read', [event_ids], {'fields': ['name', 'start', 'stop']})
             return events
         return []
 
     def create_full_booking(self, name, phone, email, description, start_date, duration=1.0):
         """Crea el ecosistema completo: Partner -> Lead -> Event, asegurando la clave foránea."""
-        models = self._get_models()
         
         # 1. Crear Contacto (Partner)
-        partner_id = models.execute_kw(self.db, self.uid, self.password, 'res.partner', 'create', [{
+        partner_id = self._execute_kw_with_retry('res.partner', 'create', [{
             'name': name,
             'phone': phone,
             'email': email
         }])
 
         # 2. Crear Oportunidad (Lead) vinculada al Partner
-        lead_id = models.execute_kw(self.db, self.uid, self.password, 'crm.lead', 'create', [{
+        lead_id = self._execute_kw_with_retry('crm.lead', 'create', [{
             'name': f"Oportunidad de {name}",
             'partner_id': partner_id,
             'description': description,
@@ -100,7 +119,7 @@ class OdooClient:
         }])
 
         # 3. Crear Evento en Calendario (Meeting) vinculado al Partner y Lead
-        event_id = models.execute_kw(self.db, self.uid, self.password, 'calendar.event', 'create', [{
+        event_id = self._execute_kw_with_retry('calendar.event', 'create', [{
             'name': f"Reunión Comercial: {name}",
             'start': start_date,
             'stop': start_date, # Simplificación temporal
