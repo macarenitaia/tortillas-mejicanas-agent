@@ -13,17 +13,35 @@ class OdooClient:
     def _ensure_authenticated(self):
         if not self.uid:
             common = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/common')
-            for attempt in range(3):
-                try:
-                    self.uid = common.authenticate(self.db, self.username, self.password, {})
-                    if not self.uid:
-                        raise Exception("Odoo authentication failed.")
-                    break
-                except xmlrpc.client.ProtocolError as e:
-                    if e.errcode == 429 and attempt < 2:
-                        time.sleep(2 ** attempt)
-                    else:
-                        raise
+            
+            # Probar API Key primero, si falla probar Password normal
+            passwords_to_try = []
+            if ODOO_API_KEY:
+                passwords_to_try.append(ODOO_API_KEY)
+            if ODOO_PASSWORD and ODOO_PASSWORD not in passwords_to_try:
+                passwords_to_try.append(ODOO_PASSWORD)
+            
+            if not passwords_to_try:
+                passwords_to_try.append("") # Fallback vacío
+                
+            for test_pwd in passwords_to_try:
+                for attempt in range(3):
+                    try:
+                        uid = common.authenticate(self.db, self.username, test_pwd, {})
+                        if uid:
+                            self.uid = uid
+                            self.password = test_pwd # Confirmar la contraseña ganadora para el resto de métodos
+                            return # Autenticación Exitosa
+                        break # Si devuelve False sin excepción, es credencial inválida, salir del retry (429) e intentar siguiente passwd
+                    except xmlrpc.client.ProtocolError as e:
+                        if e.errcode == 429 and attempt < 2:
+                            time.sleep(2 ** attempt)
+                        else:
+                            raise
+            
+            # Si termina el bucle y seguimos sin UID, entonces ninguna funcionó
+            if not self.uid:
+                raise Exception("Odoo authentication failed. Credenciales XML-RPC inválidas (ni API KEY ni PASS funcionan).")
 
     def _get_models(self):
         self._ensure_authenticated()
