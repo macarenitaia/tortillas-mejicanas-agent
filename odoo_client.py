@@ -2,6 +2,14 @@ import xmlrpc.client
 import time
 from config import ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, ODOO_API_KEY
 
+
+def _mask_phone(phone: str) -> str:
+    """Enmascara teléfono para logs."""
+    if len(phone) > 4:
+        return f"***{phone[-4:]}"
+    return "***"
+
+
 class OdooClient:
     def __init__(self):
         self.url = ODOO_URL
@@ -22,7 +30,7 @@ class OdooClient:
                 passwords_to_try.append(ODOO_PASSWORD)
             
             if not passwords_to_try:
-                passwords_to_try.append("") # Fallback vacío
+                passwords_to_try.append("")
                 
             for test_pwd in passwords_to_try:
                 for attempt in range(3):
@@ -30,25 +38,24 @@ class OdooClient:
                         uid = common.authenticate(self.db, self.username, test_pwd, {})
                         if uid:
                             self.uid = uid
-                            self.password = test_pwd # Confirmar la contraseña ganadora para el resto de métodos
-                            return # Autenticación Exitosa
-                        break # Si devuelve False sin excepción, es credencial inválida, salir del retry (429) e intentar siguiente passwd
+                            self.password = test_pwd
+                            return
+                        break
                     except xmlrpc.client.ProtocolError as e:
                         if e.errcode == 429 and attempt < 2:
                             time.sleep(2 ** attempt)
                         else:
                             raise
             
-            # Si termina el bucle y seguimos sin UID, entonces ninguna funcionó
             if not self.uid:
-                raise Exception("Odoo authentication failed. Credenciales XML-RPC inválidas (ni API KEY ni PASS funcionan).")
+                raise Exception("Odoo authentication failed.")
 
     def _get_models(self):
         self._ensure_authenticated()
         return xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/object')
 
     def _execute_kw_with_retry(self, model, method, *args, **kwargs):
-        """Ejecuta llamadas a Odoo XML-RPC con reintento y espera en caso de Rate Limiting (429)."""
+        """Ejecuta llamadas a Odoo XML-RPC con reintento y exponential backoff."""
         models = self._get_models()
         max_retries = 3
         for attempt in range(max_retries):
@@ -56,15 +63,21 @@ class OdooClient:
                 return models.execute_kw(self.db, self.uid, self.password, model, method, *args, **kwargs)
             except xmlrpc.client.ProtocolError as e:
                 if e.errcode == 429 and attempt < max_retries - 1:
-                    wait_time = 2 ** attempt # Exponential backoff: 1s, 2s
-                    print(f"[Odoo API] Límite alcanzado (429). Reintentando en {wait_time}s...")
+                    wait_time = 2 ** attempt
+                    print(f"[Odoo API] Rate limited (429). Retry in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
                     raise
 
+    def _safe_delete(self, model, record_id):
+        """Intenta eliminar un registro para compensar un booking parcial."""
+        try:
+            self._execute_kw_with_retry(model, 'unlink', [[record_id]])
+        except Exception:
+            print(f"[Odoo Rollback] No se pudo eliminar {model}:{record_id}")
+
     def search_partner_by_phone(self, phone):
         """Busca un partner por teléfono o móvil."""
-        # Limpiar el teléfono para la búsqueda (solo dígitos)
         clean_phone = ''.join(filter(str.isdigit, phone))
         
         domain = [
@@ -96,8 +109,8 @@ class OdooClient:
         """Agenda un evento en el calendario."""
         vals = {
             'name': summary,
-            'start': start_date, # Formato: 'YYYY-MM-DD HH:MM:SS'
-            'stop': start_date, # Odoo suele requerir datetime real, simplificamos asumiendo start=stop o suma
+            'start': start_date,
+            'stop': start_date,
             'duration': duration,
             'partner_ids': [(4, partner_id)]
         }
@@ -106,12 +119,10 @@ class OdooClient:
 
     def check_availability(self, date_start, date_end):
         """Lee el calendario de Odoo entre dos fechas y devuelve los eventos ocupados."""
-        # Buscar eventos que se solapen con el rango dado
         domain = [
             ('start', '<', date_end),
             ('stop', '>', date_start)
         ]
-        # Recuperar eventos (nombre y horas)
         event_ids = self._execute_kw_with_retry('calendar.event', 'search', [domain])
         if event_ids:
             events = self._execute_kw_with_retry('calendar.event', 'read', [event_ids], {'fields': ['name', 'start', 'stop']})
@@ -119,35 +130,49 @@ class OdooClient:
         return []
 
     def create_full_booking(self, name, phone, email, description, start_date, duration=1.0):
-        """Crea el ecosistema completo: Partner -> Lead -> Event, asegurando la clave foránea."""
+        """Crea Partner -> Lead -> Event de forma transaccional con rollback en caso de fallo."""
+        partner_id = None
+        lead_id = None
+        event_id = None
         
-        # 1. Crear Contacto (Partner)
-        partner_id = self._execute_kw_with_retry('res.partner', 'create', [{
-            'name': name,
-            'phone': phone,
-            'email': email
-        }])
+        try:
+            # 1. Crear Contacto (Partner)
+            partner_id = self._execute_kw_with_retry('res.partner', 'create', [{
+                'name': name,
+                'phone': phone,
+                'email': email
+            }])
 
-        # 2. Crear Oportunidad (Lead) vinculada al Partner
-        lead_id = self._execute_kw_with_retry('crm.lead', 'create', [{
-            'name': f"Oportunidad de {name}",
-            'partner_id': partner_id,
-            'description': description,
-            'type': 'opportunity'
-        }])
+            # 2. Crear Oportunidad (Lead) vinculada al Partner
+            lead_id = self._execute_kw_with_retry('crm.lead', 'create', [{
+                'name': f"Oportunidad de {name}",
+                'partner_id': partner_id,
+                'description': description,
+                'type': 'opportunity'
+            }])
 
-        # 3. Crear Evento en Calendario (Meeting) vinculado al Partner y Lead
-        event_id = self._execute_kw_with_retry('calendar.event', 'create', [{
-            'name': f"Reunión Comercial: {name}",
-            'start': start_date,
-            'stop': start_date, # Simplificación temporal
-            'duration': duration,
-            'partner_ids': [(4, partner_id)], # Asociar al cliente
-            'opportunity_id': lead_id # Asociar a la oportunidad directamente
-        }])
+            # 3. Crear Evento en Calendario vinculado al Partner y Lead
+            event_id = self._execute_kw_with_retry('calendar.event', 'create', [{
+                'name': f"Reunión Comercial: {name}",
+                'start': start_date,
+                'stop': start_date,
+                'duration': duration,
+                'partner_ids': [(4, partner_id)],
+                'opportunity_id': lead_id
+            }])
 
-        return {
-            'partner_id': partner_id,
-            'lead_id': lead_id,
-            'event_id': event_id
-        }
+            return {
+                'partner_id': partner_id,
+                'lead_id': lead_id,
+                'event_id': event_id
+            }
+        except Exception as e:
+            # --- ROLLBACK: Compensar registros parciales ---
+            print(f"[Odoo Booking ROLLBACK] Error en paso: {e}")
+            if event_id:
+                self._safe_delete('calendar.event', event_id)
+            if lead_id:
+                self._safe_delete('crm.lead', lead_id)
+            if partner_id:
+                self._safe_delete('res.partner', partner_id)
+            raise  # Re-lanzar para que el agente lo gestione

@@ -22,4 +22,5 @@ htmlcov/
 # Credenciales y archivos locales (IMPORTANTE)
 .env
 .env.local
-config.py  # Si en el futuro ponemos los tokens directamente aquí. Aunque está bien si solo son placeholders.
+upload_envs.py
+.vercel
