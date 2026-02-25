@@ -89,22 +89,27 @@ def create_tasks(session_id, user_message, chat_history="", crm_context=""):
 
 # --- Crew ---
 
-def run_odoo_crew(session_id, user_message):
+def run_odoo_crew(session_id: str, user_message: str) -> str:
     try:
-        # 1. Guardar el mensaje del usuario en memoria a largo plazo
+        log.info(f"[STEP 1/6] Saving user message for session {session_id[:8]}***")
         save_message(session_id, "usuario", user_message)
         
-        # 2. Recuperar el historial reciente
+        log.info("[STEP 2/6] Fetching chat history")
         chat_history = get_recent_messages(session_id, limit=6)
         
-        # 3. Buscar proactivamente al cliente en Odoo para darle contexto a la IA
-        partner = odoo.search_partner_by_phone(session_id)
+        log.info("[STEP 3/6] Searching partner in Odoo")
+        try:
+            partner = odoo.search_partner_by_phone(session_id)
+        except Exception as odoo_err:
+            log.warning(f"Odoo search_partner failed (non-fatal): {type(odoo_err).__name__}: {odoo_err}")
+            partner = None
+            
         if partner:
             crm_context = f"El usuario actual YA EXISTE en nuestro CRM de Odoo. Su nombre es: {partner['name']}, y su email es: {partner.get('email', 'N/A')}. Llámalo por su nombre para darle un trato VIP y NO le pidas su email ni nombre de nuevo."
         else:
             crm_context = "El usuario es NUEVO, no sabemos ni su nombre ni nada. Salúdalo cálidamente y cuando sea el momento sutil, averigua cómo se llama."
 
-        # 4. Formular la tarea con el historial e identidad inyectados
+        log.info("[STEP 4/6] Creating CrewAI tasks")
         tasks = create_tasks(session_id, user_message, chat_history, crm_context)
         crew = Crew(
             agents=[support_agent, sales_agent],
@@ -113,13 +118,14 @@ def run_odoo_crew(session_id, user_message):
             verbose=True
         )
         
-        # 5. Ejecutar la inteligencia y obtener respuesta
+        log.info("[STEP 5/6] Executing crew.kickoff()")
         result = crew.kickoff()
         final_text = str(result)
         
-        # 6. Guardar la respuesta definitiva del agente en memoria
+        log.info("[STEP 6/6] Saving agent response")
         save_message(session_id, "agente", final_text)
         
+        log.info(f"Crew completed. Response length: {len(final_text)} chars")
         return final_text
     except Exception as e:
         import traceback
