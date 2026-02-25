@@ -31,7 +31,3 @@ WHATSAPP_APP_SECRET = os.getenv("WHATSAPP_APP_SECRET", "")
 
 # API Authentication
 API_SECRET_KEY = os.getenv("API_SECRET_KEY", "")
-
-# Email (Resend)
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-EMAIL_FROM = os.getenv("EMAIL_FROM", "Sofía de Real to Digital <sofia@realtodigital3d.com>")
