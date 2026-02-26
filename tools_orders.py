@@ -87,15 +87,19 @@ class CreateSaleOrderTool(BaseTool):
             order_lines = [{'product_id': int(product_id), 'quantity': float(quantity)}]
             order = odoo.create_sale_order(partner_id, order_lines)
             
-            # 3. Confirmar el pedido
+            # 3. Confirmar el pedido (esto también enviará el email)
             odoo.confirm_sale_order(order['order_id'])
+            
+            # 4. Generar enlace de pago
+            payment_link = odoo.generate_payment_link(order['order_id'], order['amount_total'])
+            link_text = f"\n- Enlace de Pago: {payment_link}" if payment_link else ""
             
             return (
                 f"✅ Pedido creado y confirmado:\n"
                 f"- Referencia: {order['order_name']}\n"
                 f"- Total: {order['amount_total']:.2f}€\n"
                 f"- Cliente: {name}\n"
-                f"El pedido está listo para facturar."
+                f"El pedido está listo para facturar. Se ha enviado un email de confirmación automático al cliente.{link_text}"
             )
         except Exception as e:
             log.error(f"CreateSaleOrderTool error: {type(e).__name__}: {e}")

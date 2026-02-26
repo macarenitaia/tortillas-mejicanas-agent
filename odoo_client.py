@@ -292,10 +292,42 @@ class OdooClient:
         try:
             self._execute_kw_with_retry('sale.order', 'action_confirm', [[order_id]])
             log.info(f"Sale order {order_id} confirmed")
+            
+            # --- Enviar email de confirmación ---
+            try:
+                self._execute_kw_with_retry('sale.order', '_send_order_confirmation_mail', [[order_id]])
+                log.info(f"Confirmation email sent for order {order_id}")
+            except Exception as email_err:
+                log.warning(f"Failed to send confirmation email for order {order_id}: {email_err}")
+
             return True
         except Exception as e:
             log.error(f"Confirm order {order_id} failed: {type(e).__name__}")
             raise
+
+    def generate_payment_link(self, order_id: int, amount: float) -> str:
+        """Genera un enlace de pago para un pedido de venta mediante wizard."""
+        try:
+            wizard_vals = {
+                'res_id': order_id,
+                'res_model': 'sale.order',
+                'amount': amount,
+                'amount_max': amount,
+            }
+            wizard_id = self._execute_kw_with_retry('payment.link.wizard', 'create', [wizard_vals])
+            wizard_data = self._execute_kw_with_retry(
+                'payment.link.wizard', 'read', 
+                [[wizard_id]], 
+                {'fields': ['link']}
+            )
+            if wizard_data and wizard_data[0].get('link'):
+                link = wizard_data[0]['link']
+                log.info(f"Payment link generated: {link}")
+                return link
+            return ""
+        except Exception as e:
+            log.error(f"Payment link generation failed for order {order_id}: {type(e).__name__}")
+            return ""
 
     # ==========================================
     # FACTURACIÓN (account.move)
