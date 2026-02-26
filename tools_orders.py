@@ -71,35 +71,44 @@ class CreateSaleOrderTool(BaseTool):
     """Crea un pedido de venta completo en Odoo."""
     name: str = "Create Sale Order"
     description: str = (
-        "Creates a complete sale order with product lines. "
-        "Requires: name (client name), phone (client phone), email (client email, optional), "
+        "Creates a complete sale order with product lines, auto-validates delivery and creates invoice. "
+        "Requires: name (client name), phone (client phone), address (delivery address), email (client email, optional), "
         "product_id (product ID from search), quantity (number of units). "
-        "This tool will find or create the customer, create the order, and confirm it. "
-        "Returns the order reference number and total amount."
+        "This tool will find or create the customer, update their address, create the order, confirm it, and invoice it. "
+        "Returns the order reference number, total amount, and payment link."
     )
 
-    def _run(self, name: str, phone: str, product_id: int, quantity: float, email: str = "") -> str:
+    def _run(self, name: str, phone: str, address: str, product_id: int, quantity: float, email: str = "") -> str:
         try:
             # 1. Buscar o crear partner
             partner_id = odoo.find_or_create_partner(name, phone, email if email else None)
+            
+            # Actualizar dirección
+            odoo._execute_kw_with_retry('res.partner', 'write', [[partner_id], {'street': address}])
             
             # 2. Crear pedido con líneas
             order_lines = [{'product_id': int(product_id), 'quantity': float(quantity)}]
             order = odoo.create_sale_order(partner_id, order_lines)
             
-            # 3. Confirmar el pedido (esto también enviará el email)
+            # 3. Confirmar el pedido (esto envía el email proforma/pedido inicial)
             odoo.confirm_sale_order(order['order_id'])
             
-            # 4. Generar enlace de pago
+            # 4. Auto-entregar y facturar
+            invoice_success = odoo.deliver_and_invoice_order(order['order_id'])
+            
+            # 5. Generar enlace de pago
             payment_link = odoo.generate_payment_link(order['order_id'], order['amount_total'])
-            link_text = f"\n- Enlace de Pago: {payment_link}" if payment_link else ""
+            link_text = f"\n- Enlace de Pago Seguro: {payment_link}" if payment_link else ""
+            
+            invoice_status = "El pedido ha sido procesado, entregado y facturado automáticamente." if invoice_success else "El pedido está confirmado."
             
             return (
-                f"✅ Pedido creado y confirmado:\n"
+                f"✅ Pedido creado exitosamente:\n"
                 f"- Referencia: {order['order_name']}\n"
-                f"- Total: {order['amount_total']:.2f}€\n"
-                f"- Cliente: {name}\n"
-                f"El pedido está listo para facturar. Se ha enviado un email de confirmación automático al cliente.{link_text}"
+                f"- Producto ID: {product_id} x {quantity} ud(s)\n"
+                f"- Total a pagar: {order['amount_total']:.2f}€\n"
+                f"- Dirección de Entrega: {address}\n"
+                f"{invoice_status} Se ha enviado un correo con los detalles.{link_text}"
             )
         except Exception as e:
             log.error(f"CreateSaleOrderTool error: {type(e).__name__}: {e}")

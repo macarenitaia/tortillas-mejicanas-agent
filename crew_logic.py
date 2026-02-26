@@ -64,11 +64,10 @@ secretary_agent = Agent(
         'REGLA 6 (PEDIDOS): Cuando el cliente quiera hacer un pedido:\n'
         '  a) Busca el producto con "Search Products" para encontrar el ID y precio.\n'
         '  b) NO uses "Check Inventory" — nuestros productos son siempre disponibles.\n'
-        '  c) Crea el pedido directamente con "Create Sale Order" (necesitas nombre y teléfono del cliente).\n'
-        '  d) Tras crear pedido exitoso, genera factura con "Create Invoice".\n'
-        '  e) Envía email de confirmación con "Send Email".\n'
-        '  f) SOLO usa "Create Manufacturing Order" si el cliente pide una cantidad MUY grande (más de 1000 unidades).\n'
-        'REGLA 7 (EMAIL): Después de agendar UNA REUNIÓN o CREAR UN PEDIDO CON ÉXITO, envía un email de confirmación usando SendEmailTool.\n'
+        '  c) OBLIGATORIO: Pregunta siempre al cliente cuántas unidades desea y su dirección de entrega exacta ANTES de intentar crear el pedido.\n'
+        '  d) Una vez tengas TODOS los datos (nombre, teléfono, producto, cantidad, dirección), usa "Create Sale Order" (esta herramienta genera factura y email automáticamente).\n'
+        '  e) SOLO usa "Create Manufacturing Order" si el cliente pide una cantidad MUY grande (más de 1000 unidades).\n'
+        'REGLA 7 (EMAIL): Después de agendar UNA REUNIÓN CON ÉXITO, envía un email de confirmación usando SendEmailTool. (Para PEDIDOS no es necesario, ya se envía automático).\n'
         'REGLA 8 (ANTI-ALUCINACIÓN): NUNCA inventes reuniones, pedidos, precios o cantidades que NO existan. '
         'NUNCA asumas lo que el usuario quiere. Si dice "hola", simplemente responde al saludo. '
         'NO menciones pedidos o reuniones anteriores a menos que el usuario los mencione PRIMERO.\n'
@@ -122,12 +121,11 @@ def create_tasks(session_id, user_message, chat_history="", crm_context=""):
                     f"- Si pregunta algo → resuelve su consulta, busca en el catálogo si es sobre productos.\n"
                     f"- Si PIDE EXPLÍCITAMENTE una reunión → recaba datos faltantes y agenda.\n"
                     f"- Si quiere hacer un PEDIDO:\n"
-                    f"    a) Si el usuario es NUEVO, DEBES pedirle su nombre y email (si no te los ha dado ya) ANTES de procesar nada.\n"
+                    f"    a) OBLIGATORIO: Pide al usuario su cantidad de unidades y dirección de entrega exacta (Y nombre+email si es usuario NUEVO) ANTES de procesar nada.\n"
                     f"    b) Busca el producto con 'Search Products' para obtener ID y precio.\n"
                     f"    c) NO compruebes inventario (nuestros productos siempre están disponibles).\n"
-                    f"    d) Crea pedido directamente con 'Create Sale Order' (necesitas nombre y teléfono del cliente).\n"
-                    f"    e) Tras crear pedido → genera factura con 'Create Invoice'.\n"
-                    f"    f) Tras pedido exitoso → envía email con 'Send Email'.\n"
+                    f"    d) Crea pedido usando 'Create Sale Order' enviando TODOS los parámetros requeridos.\n"
+                    f"    e) (Ya no es necesario usar 'Create Invoice' o 'Send Email', 'Create Sale Order' lo hace automáticamente).\n"
                     f"- Si ya tienes los datos y propone una fecha/hora para reunión:\n"
                     f"    a) Valida con OdooCheckAvailabilityTool (RESTA {offset_hours}h para UTC).\n"
                     f"    b) Si está ocupado, proponle otro horario.\n"

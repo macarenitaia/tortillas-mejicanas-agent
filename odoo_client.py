@@ -305,6 +305,49 @@ class OdooClient:
             log.error(f"Confirm order {order_id} failed: {type(e).__name__}")
             raise
 
+    def deliver_and_invoice_order(self, order_id: int) -> bool:
+        """Valida la entrega (picking) y crea/publica la factura automáticamente."""
+        try:
+            # 1. Validar Pickings (Entregas)
+            order_data = self._execute_kw_with_retry('sale.order', 'read', [[order_id]], {'fields': ['picking_ids']})
+            picking_ids = order_data[0].get('picking_ids', [])
+            
+            for picking_id in picking_ids:
+                picking = self._execute_kw_with_retry('stock.picking', 'read', [[picking_id]], {'fields': ['state']})[0]
+                if picking['state'] not in ['done', 'cancel']:
+                    # Odoo 16+ requiere setear cantidades
+                    try:
+                        self._execute_kw_with_retry('stock.picking', 'action_set_quantities_to_reservation', [[picking_id]])
+                    except:
+                        pass # Fallback si no existe
+                    self._execute_kw_with_retry('stock.picking', 'button_validate', [[picking_id]])
+                    log.info(f"Picking {picking_id} validated for order {order_id}")
+            
+            # 2. Crear Factura
+            wizard_id = self._execute_kw_with_retry(
+                'sale.advance.payment.inv', 'create',
+                [{'advance_payment_method': 'delivered'}],
+                {'context': {'active_ids': [order_id], 'active_model': 'sale.order'}}
+            )
+            self._execute_kw_with_retry(
+                'sale.advance.payment.inv', 'create_invoices',
+                [[wizard_id]],
+                {'context': {'active_ids': [order_id], 'active_model': 'sale.order'}}
+            )
+            
+            # 3. Publicar Factura
+            order_data2 = self._execute_kw_with_retry('sale.order', 'read', [[order_id]], {'fields': ['invoice_ids']})
+            invoice_ids = order_data2[0].get('invoice_ids', [])
+            
+            for inv_id in invoice_ids:
+                self._execute_kw_with_retry('account.move', 'action_post', [[inv_id]])
+                log.info(f"Invoice {inv_id} posted for order {order_id}")
+                
+            return True
+        except Exception as e:
+            log.error(f"Failed to auto-deliver/invoice order {order_id}: {type(e).__name__}: {e}")
+            return False
+
     def generate_payment_link(self, order_id: int, amount: float) -> str:
         """Genera un enlace de pago para un pedido de venta mediante wizard."""
         try:
