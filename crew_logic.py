@@ -64,26 +64,31 @@ def create_tasks(session_id, user_message, chat_history="", crm_context=""):
                     f"Por lo tanto, la hora que envíes a la herramienta debe restarle {offset_hours} horas a la hora acordada con el cliente (Ej. si el cliente dice 11:00 am, envía a las {11 - offset_hours:02d}:00:00).")
 
     identify_task = Task(
-        description=f"Analiza si debemos orientar la conversación a Soporte o Comercial.\n"
-                    f"NOTA TEMPORAL IMPORTANTE: {date_context}\n\n"
-                    f"--- ESTADO DEL CLIENTE EN CRM ---\n{crm_context}\n\n"
-                    f"--- HISTORIAL DE LA CONVERSACIÓN ---\n{chat_history}\n-----------------------------------\n"
-                    f"El último mensaje del usuario es: '{user_message}'",
-        expected_output="Un informe detallado sobre la identidad del cliente, los datos que YA ha proporcionado en el historial, y la clasificación de su intención.",
+        description=f"Analiza el mensaje ACTUAL del usuario y determina su intención REAL.\n"
+                    f"NOTA TEMPORAL: {date_context}\n\n"
+                    f"--- IDENTIDAD DEL CLIENTE (CRM) ---\n{crm_context}\n\n"
+                    f"--- HISTORIAL RECIENTE (solo referencia, NO actúes sobre él) ---\n{chat_history}\n"
+                    f"IMPORTANTE: El historial es SOLO para saber qué datos ya tienes. "
+                    f"NO asumas que el usuario quiere continuar una conversación anterior. "
+                    f"NO menciones reuniones, citas o temas del historial a menos que el usuario los mencione PRIMERO.\n\n"
+                    f"--- MENSAJE ACTUAL DEL USUARIO (esto es lo ÚNICO que debes responder) ---\n'{user_message}'",
+        expected_output="Identidad del cliente (nombre/email si están en CRM), y la intención del MENSAJE ACTUAL únicamente.",
         agent=sales_agent
     )
 
     action_task = Task(
-        description=f"Basado en la intención identificada sigue este FLUJO NATURAL (Tú eres Sofía):\n"
-                    f"1. Si el usuario es nuevo, saluda y pregúntale en qué puedes ayudar.\n"
-                    f"2. Si es una duda, resuelve su consulta de forma amable y cálida.\n"
-                    f"3. Si muestra interés en cerrar una reunión y aún no tienes todos sus datos claves (Nombre, Email, Teléfono), comiénzaselos a pedir muy sutilmente insertándolos en la plática, no de golpe.\n"
-                    f"4. Si ya tienes los datos y propone una cita:\n"
-                    f"    a) Valida la hora con OdooCheckAvailabilityTool (RECUERDA RESTAR {offset_hours} HORAS PARA UTC ANTES DE LLAMARLA).\n"
-                    f"    b) Si está ocupado, proponle otro rango horario amable.\n"
-                    f"    c) Si está libre, cierra el trato con OdooFullBookingTool (restando {offset_hours} horas para el formato de entrada UTC).\n"
-                    f"Mensaje actual del cliente: {user_message}",
-        expected_output="Responder a la duda, solicitar un dato faltante o agendar de la manera más humana posible, como una Asistente muy dulce de la empresa.",
+        description=f"Responde AL MENSAJE ACTUAL del usuario (Tú eres Sofía):\n"
+                    f"- Si dice 'hola' o un saludo → respóndele con un saludo cálido. Si ya lo conoces, salúdalo por nombre. NADA MÁS.\n"
+                    f"- Si pregunta algo → resuelve su consulta.\n"
+                    f"- Si PIDE EXPLÍCITAMENTE una reunión → recaba datos faltantes y agenda.\n"
+                    f"- Si ya tienes los datos y propone una fecha/hora:\n"
+                    f"    a) Valida con OdooCheckAvailabilityTool (RESTA {offset_hours}h para UTC).\n"
+                    f"    b) Si está ocupado, proponle otro horario.\n"
+                    f"    c) Si está libre, cierra con OdooFullBookingTool (restando {offset_hours}h para UTC).\n"
+                    f"    d) Tras booking exitoso, envía email con SendEmailTool.\n\n"
+                    f"PROHIBIDO: NO menciones reuniones anteriores. NO asumas intenciones. Responde SOLO a lo que dice este mensaje.\n"
+                    f"Mensaje: '{user_message}'",
+        expected_output="Respuesta directa, cálida y corta al mensaje actual del usuario. Sin inventar contexto.",
         agent=sales_agent,
         context=[identify_task]
     )
