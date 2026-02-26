@@ -5,6 +5,7 @@ langchain-openai==0.3.23
 openai==1.83.0
 fastapi==0.132.0
 uvicorn==0.41.0
+gunicorn==23.0.0
 python-dotenv==1.1.1
 httpx==0.28.1
 pytz==2025.2

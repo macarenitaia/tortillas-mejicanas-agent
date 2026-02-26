@@ -1,10 +1,12 @@
 services:
   - type: web
     name: tortillas-mejicanas-agent
-    env: python
+    runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python api/index.py
+    startCommand: gunicorn api.index:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.11"
       - key: TENANT_NAME
         value: Tortillas Mejicanas
       - key: AGENT_NAME
@@ -37,4 +39,3 @@ services:
         sync: false
       - key: ODOO_API_KEY
         sync: false
-
