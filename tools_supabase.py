@@ -84,9 +84,9 @@ def get_recent_messages(session_phone: str, limit: int = 5) -> str:
         if not tenant_id or not lead_id:
             return "No hay historial previo de conversación."
         
-        # Solo recuperar mensajes de las últimas 4 horas (sesión activa)
+        # Solo recuperar mensajes de los últimos 30 minutos (sesión activa real)
         from datetime import datetime, timedelta, timezone
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
         
         res = (supabase.table("messages")
                .select("role, content")
