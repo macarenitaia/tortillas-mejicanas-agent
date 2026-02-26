@@ -107,7 +107,7 @@ def run_odoo_crew(session_id: str, user_message: str) -> str:
         
         log.info("[STEP 3/6] Searching partner in Odoo")
         try:
-            partner = odoo.search_partner_by_phone(session_id)
+            partner = odoo.search_contact_by_phone(session_id)
         except Exception as odoo_err:
             log.warning(f"Odoo search_partner failed (non-fatal): {type(odoo_err).__name__}: {odoo_err}")
             partner = None

@@ -8,7 +8,7 @@ class OdooSearchTool(BaseTool):
     description: str = "Searches for an existing customer in Odoo using their phone number. Returns customer details if found."
 
     def _run(self, phone: str) -> str:
-        partner = odoo.search_partner_by_phone(phone)
+        partner = odoo.search_contact_by_phone(phone)
         if partner:
             return f"Customer Found: {partner['name']} (ID: {partner['id']}). Email: {partner.get('email', 'N/A')}"
         return "Customer not found in Odoo."

@@ -84,15 +84,16 @@ class OdooClient:
         except Exception:
             log.error(f"Rollback failed: {model}:{record_id}")
 
-    def search_partner_by_phone(self, phone: str) -> Optional[Dict]:
-        """Busca un partner por teléfono o móvil. Prueba número completo y últimos 9 dígitos."""
+    def search_contact_by_phone(self, phone: str) -> Optional[Dict]:
+        """Busca un contacto por teléfono en res.partner Y crm.lead. Reconoce clientes y leads."""
         clean_phone = ''.join(filter(str.isdigit, phone))
         
-        # Intentar con el número completo y con los últimos 9 dígitos (sin prefijo país)
+        # Variantes de búsqueda: número completo + últimos 9 dígitos (sin prefijo país)
         search_variants = [clean_phone]
         if len(clean_phone) > 9:
-            search_variants.append(clean_phone[-9:])  # Ej: 34606523222 → 606523222
+            search_variants.append(clean_phone[-9:])
         
+        # 1) Buscar en res.partner (clientes/contactos)
         for variant in search_variants:
             domain = [
                 '|',
@@ -105,10 +106,34 @@ class OdooClient:
                     'res.partner', 'read', [partner_ids],
                     {'fields': ['name', 'email', 'phone', 'mobile']}
                 )
-                log.info(f"Partner found: {partners[0]['name']} (variant: {variant[:4]}***)")
+                log.info(f"Partner found: {partners[0]['name']}")
                 return partners[0]
         
-        log.info(f"No partner found for phone ***{clean_phone[-4:]}")
+        # 2) Buscar en crm.lead (leads/oportunidades)
+        for variant in search_variants:
+            domain = [
+                '|',
+                ('phone', 'ilike', variant),
+                ('mobile', 'ilike', variant)
+            ]
+            lead_ids = self._execute_kw_with_retry('crm.lead', 'search', [domain])
+            if lead_ids:
+                leads = self._execute_kw_with_retry(
+                    'crm.lead', 'read', [lead_ids],
+                    {'fields': ['contact_name', 'email_from', 'phone', 'mobile', 'partner_name']}
+                )
+                lead = leads[0]
+                # Mapear campos de lead a formato de partner para compatibilidad
+                result = {
+                    'name': lead.get('contact_name') or lead.get('partner_name') or 'Lead',
+                    'email': lead.get('email_from', ''),
+                    'phone': lead.get('phone', ''),
+                    'mobile': lead.get('mobile', ''),
+                }
+                log.info(f"Lead found: {result['name']}")
+                return result
+        
+        log.info(f"No contact found for phone ***{clean_phone[-4:]}")
         return None
 
     def create_lead(self, name: str, phone: str, email: Optional[str] = None, description: Optional[str] = None) -> int:
