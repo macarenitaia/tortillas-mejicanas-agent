@@ -100,7 +100,7 @@ class OdooClient:
             if partner_ids:
                 partners = self._execute_kw_with_retry(
                     'res.partner', 'read', [partner_ids],
-                    {'fields': ['name', 'email', 'phone']}
+                    {'fields': ['name', 'email', 'phone', 'street']}
                 )
                 log.info(f"Partner found: {partners[0]['name']}")
                 return partners[0]
@@ -112,13 +112,14 @@ class OdooClient:
             if lead_ids:
                 leads = self._execute_kw_with_retry(
                     'crm.lead', 'read', [lead_ids],
-                    {'fields': ['contact_name', 'email_from', 'phone', 'partner_name']}
+                    {'fields': ['contact_name', 'email_from', 'phone', 'partner_name', 'street']}
                 )
                 lead = leads[0]
                 result = {
                     'name': lead.get('contact_name') or lead.get('partner_name') or 'Lead',
                     'email': lead.get('email_from', ''),
                     'phone': lead.get('phone', ''),
+                    'street': lead.get('street', ''),
                 }
                 log.info(f"Lead found: {result['name']}")
                 return result

@@ -121,7 +121,7 @@ def create_tasks(session_id, user_message, chat_history="", crm_context=""):
                     f"- Si pregunta algo → resuelve su consulta, busca en el catálogo si es sobre productos.\n"
                     f"- Si PIDE EXPLÍCITAMENTE una reunión → recaba datos faltantes y agenda.\n"
                     f"- Si quiere hacer un PEDIDO:\n"
-                    f"    a) OBLIGATORIO: Pide al usuario su cantidad de unidades y dirección de entrega exacta (Y nombre+email si es usuario NUEVO) ANTES de procesar nada.\n"
+                    f"    a) OBLIGATORIO: Pide al usuario su cantidad de unidades. Si NO TIENES su dirección de entrega (o es usuario NUEVO), pídesela TAMBIÉN ANTES de procesar nada. NUNCA pidas datos que ya tengas en la Identidad del Cliente.\n"
                     f"    b) Busca el producto con 'Search Products' para obtener ID y precio.\n"
                     f"    c) NO compruebes inventario (nuestros productos siempre están disponibles).\n"
                     f"    d) Crea pedido usando 'Create Sale Order' enviando TODOS los parámetros requeridos.\n"
@@ -161,20 +161,26 @@ def run_odoo_crew(session_id: str, user_message: str) -> str:
             p_name = partner['name']
             p_email = partner.get('email', '')
             p_phone = partner.get('phone', '')
+            p_street = partner.get('street', '')
+            
+            street_info = f"- Dirección de entrega: {p_street}" if p_street else "- Dirección de entrega: NO DISPONIBLE (Debes pedírsela si hace un pedido)"
+            
             crm_context = (
                 f"IDENTIDAD CONFIRMADA DEL USUARIO (datos del CRM, son 100% fiables):\n"
                 f"- Nombre: {p_name}\n"
                 f"- Email: {p_email}\n"
                 f"- Teléfono: {p_phone}\n"
+                f"{street_info}\n"
                 f"INSTRUCCIÓN: Este usuario es un CLIENTE CONOCIDO. Llámalo '{p_name}' con total seguridad. "
-                f"NO le preguntes su nombre, NO le preguntes su email, NO le pidas confirmar quién es. "
-                f"YA TIENES TODOS SUS DATOS. Si pide agendar reunión o hacer un pedido, usa directamente estos datos."
+                f"NO le preguntes su nombre, NO le preguntes su email. "
+                f"Si hace un pedido y YA tienes su dirección de entrega, NO se la pidas de nuevo. "
+                f"Usa directamente estos datos en las herramientas."
             )
         else:
             crm_context = (
                 f"IDENTIDAD DEL USUARIO: Es un usuario NUEVO (no está en el CRM). "
-                f"NO TIENES su nombre ni su email, SOLO su teléfono actual ({session_id.split('_')[-1]}).\n"
-                f"INSTRUCCIÓN: Si el usuario quiere hacer un PEDIDO o AGENDAR REUNIÓN, es OBLIGATORIO que le pidas su nombre y email (o al menos su nombre) de forma amable ANTES de intentar usar las herramientas para crear el pedido o reunión."
+                f"NO TIENES su nombre, ni su email, ni su dirección. SOLO su teléfono actual ({session_id.split('_')[-1]}).\n"
+                f"INSTRUCCIÓN: Si el usuario quiere hacer un PEDIDO o AGENDAR REUNIÓN, es OBLIGATORIO que le pidas su nombre, email (o al menos nombre) y su dirección de entrega (si es pedido) de forma amable ANTES de intentar usar las herramientas."
             )
 
         log.info("[STEP 4/6] Creating CrewAI tasks")
