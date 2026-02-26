@@ -218,3 +218,187 @@ class OdooClient:
             if partner_id:
                 self._safe_delete('res.partner', partner_id)
             raise
+
+    # ==========================================
+    # PRODUCTOS Y CATÁLOGO
+    # ==========================================
+
+    def search_products(self, query: str, limit: int = 10) -> List[Dict]:
+        """Busca productos por nombre en product.product."""
+        domain = [('name', 'ilike', query), ('sale_ok', '=', True)]
+        product_ids = self._execute_kw_with_retry('product.product', 'search', [domain], {'limit': limit})
+        if not product_ids:
+            return []
+        return self._execute_kw_with_retry(
+            'product.product', 'read', [product_ids],
+            {'fields': ['name', 'list_price', 'qty_available', 'uom_id', 'default_code']}
+        )
+
+    def get_product_stock(self, product_id: int) -> Dict:
+        """Lee el stock disponible de un producto."""
+        products = self._execute_kw_with_retry(
+            'product.product', 'read', [[product_id]],
+            {'fields': ['name', 'qty_available', 'virtual_available', 'uom_id']}
+        )
+        if products:
+            p = products[0]
+            log.info(f"Stock check: {p['name']} → {p['qty_available']} disponible")
+            return p
+        return {}
+
+    # ==========================================
+    # PARTNERS (buscar o crear)
+    # ==========================================
+
+    def find_or_create_partner(self, name: str, phone: str, email: Optional[str] = None) -> int:
+        """Busca un partner por teléfono; si no existe, lo crea."""
+        partner = self.search_contact_by_phone(phone)
+        if partner and 'id' in partner:
+            return partner['id']
+        
+        vals: Dict[str, Any] = {'name': name, 'phone': phone}
+        if email:
+            vals['email'] = email
+        partner_id: int = self._execute_kw_with_retry('res.partner', 'create', [vals])
+        log.info(f"Partner created: {partner_id} ({name})")
+        return partner_id
+
+    # ==========================================
+    # PEDIDOS DE VENTA (sale.order)
+    # ==========================================
+
+    def create_sale_order(self, partner_id: int, order_lines: List[Dict]) -> Dict:
+        """
+        Crea un pedido de venta con líneas.
+        order_lines: [{'product_id': int, 'quantity': float}, ...]
+        Devuelve: {'order_id': int, 'order_name': str}
+        """
+        order_vals = {
+            'partner_id': partner_id,
+        }
+        order_id: int = self._execute_kw_with_retry('sale.order', 'create', [order_vals])
+        
+        for line in order_lines:
+            line_vals = {
+                'order_id': order_id,
+                'product_id': line['product_id'],
+                'product_uom_qty': line.get('quantity', 1.0),
+            }
+            self._execute_kw_with_retry('sale.order.line', 'create', [line_vals])
+        
+        # Obtener el nombre del pedido
+        order_data = self._execute_kw_with_retry(
+            'sale.order', 'read', [[order_id]],
+            {'fields': ['name', 'amount_total']}
+        )
+        order_name = order_data[0]['name'] if order_data else f"SO-{order_id}"
+        amount = order_data[0].get('amount_total', 0) if order_data else 0
+        
+        log.info(f"Sale order created: {order_name} (ID: {order_id}), total: {amount}")
+        return {'order_id': order_id, 'order_name': order_name, 'amount_total': amount}
+
+    def confirm_sale_order(self, order_id: int) -> bool:
+        """Confirma un pedido de venta (draft → sale)."""
+        try:
+            self._execute_kw_with_retry('sale.order', 'action_confirm', [[order_id]])
+            log.info(f"Sale order {order_id} confirmed")
+            return True
+        except Exception as e:
+            log.error(f"Confirm order {order_id} failed: {type(e).__name__}")
+            raise
+
+    # ==========================================
+    # FACTURACIÓN (account.move)
+    # ==========================================
+
+    def create_invoice_from_order(self, order_id: int) -> Dict:
+        """
+        Genera una factura desde un pedido de venta confirmado.
+        Usa el wizard sale.advance.payment.inv de Odoo.
+        """
+        try:
+            # Crear wizard de facturación
+            wizard_id = self._execute_kw_with_retry(
+                'sale.advance.payment.inv', 'create',
+                [{'advance_payment_method': 'delivered'}],
+                {'context': {'active_ids': [order_id], 'active_model': 'sale.order'}}
+            )
+            # Ejecutar wizard
+            self._execute_kw_with_retry(
+                'sale.advance.payment.inv', 'create_invoices',
+                [[wizard_id]],
+                {'context': {'active_ids': [order_id], 'active_model': 'sale.order'}}
+            )
+            
+            # Obtener la factura creada
+            order_data = self._execute_kw_with_retry(
+                'sale.order', 'read', [[order_id]],
+                {'fields': ['invoice_ids']}
+            )
+            invoice_ids = order_data[0].get('invoice_ids', []) if order_data else []
+            
+            if invoice_ids:
+                invoice = self._execute_kw_with_retry(
+                    'account.move', 'read', [[invoice_ids[-1]]],
+                    {'fields': ['name', 'amount_total', 'state']}
+                )
+                log.info(f"Invoice created: {invoice[0]['name']}")
+                return invoice[0]
+            
+            return {'error': 'No se pudo obtener la factura creada'}
+            
+        except Exception as e:
+            log.error(f"Invoice creation failed: {type(e).__name__}: {e}")
+            raise
+
+    # ==========================================
+    # FABRICACIÓN (mrp.production)
+    # ==========================================
+
+    def create_manufacturing_order(self, product_id: int, quantity: float) -> Dict:
+        """
+        Crea una orden de fabricación para un producto.
+        Requiere que el producto tenga una lista de materiales (BOM) en Odoo.
+        """
+        try:
+            # Obtener info del producto
+            product = self._execute_kw_with_retry(
+                'product.product', 'read', [[product_id]],
+                {'fields': ['name', 'uom_id']}
+            )
+            if not product:
+                raise ValueError(f"Producto {product_id} no encontrado")
+            
+            product_name = product[0]['name']
+            uom_id = product[0]['uom_id'][0] if product[0].get('uom_id') else False
+            
+            # Buscar BOM (Bill of Materials)
+            bom_ids = self._execute_kw_with_retry(
+                'mrp.bom', 'search',
+                [[('product_tmpl_id.product_variant_ids', 'in', [product_id])]],
+                {'limit': 1}
+            )
+            
+            mo_vals: Dict[str, Any] = {
+                'product_id': product_id,
+                'product_qty': quantity,
+                'product_uom_id': uom_id,
+            }
+            
+            if bom_ids:
+                mo_vals['bom_id'] = bom_ids[0]
+            
+            mo_id = self._execute_kw_with_retry('mrp.production', 'create', [mo_vals])
+            
+            log.info(f"Manufacturing order created: MO-{mo_id} for {quantity}x {product_name}")
+            return {
+                'mo_id': mo_id,
+                'product': product_name,
+                'quantity': quantity,
+                'has_bom': bool(bom_ids)
+            }
+            
+        except Exception as e:
+            log.error(f"MRP creation failed: {type(e).__name__}: {e}")
+            raise
+

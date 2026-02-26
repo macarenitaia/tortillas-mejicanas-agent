@@ -23,7 +23,7 @@ from logger import get_logger
 
 log = get_logger("api")
 
-app = FastAPI(title="Odoo CrewAI Agent API")
+app = FastAPI(title="Tortillas Mejicanas WhatsApp Agent API")
 
 # ==========================================
 # UTILIDADES DE SEGURIDAD

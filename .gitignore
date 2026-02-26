@@ -23,4 +23,4 @@ htmlcov/
 .env
 .env.local
 upload_envs.py
-.vercel
+

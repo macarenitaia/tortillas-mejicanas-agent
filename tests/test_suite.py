@@ -35,6 +35,8 @@ class TestAPIEndpoints:
             "ODOO_PASSWORD": "testpass",
             "API_SECRET_KEY": "test-secret-123",
             "WHATSAPP_APP_SECRET": "test-app-secret",
+            "TENANT_NAME": "Tortillas Mejicanas",
+            "AGENT_NAME": "Sofía",
         }):
             # Mock de supabase antes de importar los módulos
             with patch("supabase.create_client") as mock_sb:
@@ -80,7 +82,7 @@ class TestAPIEndpoints:
     @patch("api.index.run_odoo_crew")
     def test_chat_success(self, mock_crew):
         """POST /api/chat con auth válida devuelve respuesta del agente."""
-        mock_crew.return_value = "Hola, soy Sofía 👋"
+        mock_crew.return_value = "¡Hola! Soy Sofía, tu asistente de Tortillas Mejicanas 🌮"
         response = self.client.post(
             "/api/chat",
             json={"session_id": "test123", "message": "Hola"},
@@ -88,7 +90,7 @@ class TestAPIEndpoints:
         )
         assert response.status_code == 200
         data = response.json()
-        assert "Sofía" in data["reply"]
+        assert "Tortillas" in data["reply"] or "Sofía" in data["reply"]
         assert data["session_id"] == "test123"
 
     def test_webhook_get_verification(self):

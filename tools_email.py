@@ -1,11 +1,15 @@
 """
-Herramienta de envío de emails para el agente Sofía via Odoo mail.mail.
+Herramienta de envío de emails para el agente via Odoo mail.mail.
 Usa el servidor de correo ya configurado en Odoo, y el email queda registrado en el CRM.
 """
+import os
 from crewai.tools import BaseTool
 from logger import get_logger
 
 log = get_logger("tools_email")
+
+TENANT_NAME = os.getenv("TENANT_NAME", "Tortillas Mejicanas")
+AGENT_NAME = os.getenv("AGENT_NAME", "Sofía")
 
 
 class SendEmailTool(BaseTool):
@@ -48,7 +52,7 @@ class SendEmailTool(BaseTool):
 
 
 def _build_html_email(subject: str, body: str) -> str:
-    """Construye un email HTML profesional con el branding de Real to Digital."""
+    """Construye un email HTML profesional con el branding de la empresa."""
     body_html = body.replace("\n", "<br>")
     
     return f"""
@@ -59,8 +63,8 @@ def _build_html_email(subject: str, body: str) -> str:
                     <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
                         <tr>
                             <td style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:32px 40px;text-align:center;">
-                                <h1 style="color:#ffffff;margin:0;font-size:24px;font-weight:700;">Real to Digital</h1>
-                                <p style="color:#a0aec0;margin:8px 0 0;font-size:14px;">Transformamos tu negocio</p>
+                                <h1 style="color:#ffffff;margin:0;font-size:24px;font-weight:700;">{TENANT_NAME}</h1>
+                                <p style="color:#a0aec0;margin:8px 0 0;font-size:14px;">Las mejores tortillas, directo a tu negocio 🌮</p>
                             </td>
                         </tr>
                         <tr>
@@ -74,7 +78,7 @@ def _build_html_email(subject: str, body: str) -> str:
                         <tr>
                             <td style="background:#f8f9fa;padding:24px 40px;text-align:center;border-top:1px solid #e2e8f0;">
                                 <p style="color:#a0aec0;font-size:12px;margin:0;">
-                                    &copy; 2026 Real to Digital &middot; Email enviado por nuestra asistente Sof&iacute;a.
+                                    &copy; 2026 {TENANT_NAME} &middot; Email enviado por nuestra asistente {AGENT_NAME}.
                                 </p>
                             </td>
                         </tr>

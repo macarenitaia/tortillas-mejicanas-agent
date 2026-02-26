@@ -3,8 +3,11 @@ from config import SUPABASE_URL, SUPABASE_KEY
 from crewai.tools import BaseTool
 from typing import Optional
 from logger import get_logger
+import os
 
 log = get_logger("supabase_tools")
+
+TENANT_NAME = os.getenv("TENANT_NAME", "Tortillas Mejicanas")
 
 # Inicializar cliente Supabase globalmente
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -18,14 +21,14 @@ def _mask_phone(phone: str) -> str:
 
 
 def _get_tenant_id() -> Optional[str]:
-    """Busca o crea el tenant_id de 'Real to Digital'."""
+    """Busca o crea el tenant_id de la organización configurada."""
     try:
-        res = supabase.table("organizations").select("id").eq("name", "Real to Digital").limit(1).execute()
+        res = supabase.table("organizations").select("id").eq("name", TENANT_NAME).limit(1).execute()
         if res.data and len(res.data) > 0:
             return res.data[0]["id"]
         
-        insert_res = supabase.table("organizations").insert({"name": "Real to Digital"}).execute()
-        log.info("Tenant 'Real to Digital' created")
+        insert_res = supabase.table("organizations").insert({"name": TENANT_NAME}).execute()
+        log.info(f"Tenant '{TENANT_NAME}' created")
         return insert_res.data[0]["id"]
     except Exception as e:
         log.error(f"tenant_id error: {type(e).__name__}")

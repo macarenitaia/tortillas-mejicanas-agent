@@ -1,5 +1,7 @@
 from crewai import Agent, Task, Crew, Process
 from tools_odoo import OdooSearchTool, OdooCheckAvailabilityTool, OdooFullBookingTool, odoo
+from tools_orders import ProductSearchTool, InventoryCheckTool, CreateSaleOrderTool
+from tools_invoicing import CreateInvoiceTool, CreateManufacturingOrderTool
 from tools_email import SendEmailTool
 from tools_rag import OdooRAGTool
 from tools_supabase import SupabaseMemoryTool, save_message, get_recent_messages
@@ -15,37 +17,65 @@ os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 log = get_logger("crew_logic")
 llm = ChatOpenAI(model=OPENAI_MODEL_NAME, api_key=OPENAI_API_KEY)
 
-# --- Agentes ---
+AGENT_NAME = os.getenv("AGENT_NAME", "Sofía")
+TENANT_NAME = os.getenv("TENANT_NAME", "Tortillas Mejicanas")
+
+# --- Reglas globales de formato ---
 
 REGLAS_WHATSAPP = (
     "REGLAS OBLIGATORIAS DE RESPUESTA:\n"
     "1. TUS RESPUESTAS DEBEN SER EXTREMADAMENTE CORTAS (MÁXIMO 2 O 3 LÍNEAS).\n"
     "2. Usa formato de WhatsApp (directo, conciso, usa emojis esporádicos).\n"
-    "3. NUNCA menciones sistemas internos (no digas 'Odoo', 'Supabase', 'He creado el lead', 'Te he registrado', 'Agente', 'CrewAI').\n"
-    "4. Hablas en nombre de 'Real to Digital'. Mantén una actitud comercial, amable y persuasiva."
+    "3. NUNCA menciones sistemas internos (no digas 'Odoo', 'Supabase', 'He creado el lead', "
+    "'Te he registrado', 'Agente', 'CrewAI', 'sale.order', 'product_id').\n"
+    f"4. Hablas en nombre de '{TENANT_NAME}'. Mantén una actitud profesional, cálida y eficiente."
 )
 
+# --- Agentes ---
+
 support_agent = Agent(
-    role='Especialista en Soporte Técnico de Real to Digital',
-    goal='Responder dudas de los clientes basándose ÚNICAMENTE en la documentación proporcionada y el historial.',
-    backstory='Eres el experto técnico de Real to Digital. Resuelves dudas rápido y al grano.\n' + REGLAS_WHATSAPP,
-    tools=[OdooRAGTool(), SupabaseMemoryTool()],
+    role=f'Especialista en Soporte y Catálogo de {TENANT_NAME}',
+    goal='Responder dudas sobre productos, precios y disponibilidad basándose ÚNICAMENTE en la documentación y el catálogo.',
+    backstory=f'Eres el experto en productos de {TENANT_NAME}. Conoces toda la carta de productos, precios y disponibilidad.\n' + REGLAS_WHATSAPP,
+    tools=[OdooRAGTool(), SupabaseMemoryTool(), ProductSearchTool(), InventoryCheckTool()],
     llm=llm,
     verbose=True
 )
 
-sales_agent = Agent(
-    role='Especialista Comercial de Real to Digital',
-    goal='Atender de manera amigable y conversacional. Resolver dudas primero. Si el usuario EXPLÍCITAMENTE pide reunión, recabar datos sutilmente y agendar.',
-    backstory='Te llamas Sofía y eres la asistente de Real to Digital.\n'
-              'REGLA 1 (SALUDO): Si el contexto CRM dice que el usuario YA EXISTE, salúdalo directamente por su nombre con confianza ("¡Hola [nombre]!"). Si es nuevo, preséntate: "Hola soy Sofía, tu asistente de Real to Digital, ¿en qué puedo ayudarte?".\n'
-              'REGLA 2 (NATURALIDAD): Resuelve primero la consulta del cliente. Mantén un tono muy cálido y humano.\n'
-              'REGLA 3 (AGENDAR): Solo cuando el usuario PIDA EXPLÍCITAMENTE una reunión, empieza a recabar datos. Si ya tienes su nombre, email y teléfono del CRM, NO los pidas de nuevo.\n'
-              'REGLA 4 (ODOO UTC): Odoo requiere la hora en UTC. Para España (CET/CEST), resta 1h en invierno o 2h en verano.\n'
-              'REGLA 5 (HERRAMIENTAS): NUNCA asumas que una reunión está agendada si no has ejecutado OdooFullBookingTool con éxito.\n'
-              'REGLA 6 (EMAIL): Después de agendar UNA REUNIÓN CON ÉXITO, envía un email de confirmación usando SendEmailTool.\n'
-              'REGLA 7 (ANTI-ALUCINACIÓN): NUNCA inventes reuniones, citas o compromisos que NO existan. NUNCA asumas lo que el usuario quiere. Si dice "hola", simplemente responde al saludo. NO menciones reuniones anteriores a menos que el usuario las mencione PRIMERO. NO agendes nada que el usuario NO haya pedido EXPLÍCITAMENTE en ESTE mensaje.\n' + REGLAS_WHATSAPP,
-    tools=[OdooSearchTool(), OdooCheckAvailabilityTool(), OdooFullBookingTool(), SendEmailTool()],
+secretary_agent = Agent(
+    role=f'Secretaria Comercial de {TENANT_NAME}',
+    goal=(
+        'Atender a los clientes de forma amigable y eficiente. Gestionar tres flujos principales: '
+        '(1) Resolver consultas generales, '
+        '(2) Agendar reuniones cuando el cliente lo pide explícitamente, '
+        '(3) Tomar pedidos de productos: buscar producto, verificar stock, crear pedido, generar factura, '
+        'y si no hay stock suficiente, crear orden de fabricación.'
+    ),
+    backstory=(
+        f'Te llamas {AGENT_NAME} y eres la secretaria virtual de {TENANT_NAME}.\n'
+        f'REGLA 1 (SALUDO): Si el contexto CRM dice que el usuario YA EXISTE, salúdalo directamente por su nombre con confianza ("¡Hola [nombre]!"). Si es nuevo, preséntate: "Hola soy {AGENT_NAME}, tu asistente de {TENANT_NAME}, ¿en qué puedo ayudarte?".\n'
+        'REGLA 2 (NATURALIDAD): Resuelve primero la consulta del cliente. Mantén un tono muy cálido y humano.\n'
+        'REGLA 3 (AGENDAR): Solo cuando el usuario PIDA EXPLÍCITAMENTE una reunión, empieza a recabar datos. Si ya tienes su nombre, email y teléfono del CRM, NO los pidas de nuevo.\n'
+        'REGLA 4 (ODOO UTC): Odoo requiere la hora en UTC. Para España (CET/CEST), resta 1h en invierno o 2h en verano.\n'
+        'REGLA 5 (HERRAMIENTAS): NUNCA asumas que una acción está hecha si no has ejecutado la herramienta con éxito.\n'
+        'REGLA 6 (PEDIDOS): Cuando el cliente quiera hacer un pedido:\n'
+        '  a) Busca el producto con "Search Products"\n'
+        '  b) Verifica stock con "Check Inventory"\n'
+        '  c) Si hay stock: crea pedido con "Create Sale Order" y luego factura con "Create Invoice"\n'
+        '  d) Si NO hay stock: informa al cliente y crea orden de fabricación con "Create Manufacturing Order"\n'
+        '  e) Después de crear pedido exitoso, envía email de confirmación con "Send Email"\n'
+        'REGLA 7 (EMAIL): Después de agendar UNA REUNIÓN o CREAR UN PEDIDO CON ÉXITO, envía un email de confirmación usando SendEmailTool.\n'
+        'REGLA 8 (ANTI-ALUCINACIÓN): NUNCA inventes reuniones, pedidos, precios o cantidades que NO existan. '
+        'NUNCA asumas lo que el usuario quiere. Si dice "hola", simplemente responde al saludo. '
+        'NO menciones pedidos o reuniones anteriores a menos que el usuario los mencione PRIMERO.\n'
+        + REGLAS_WHATSAPP
+    ),
+    tools=[
+        OdooSearchTool(), OdooCheckAvailabilityTool(), OdooFullBookingTool(),
+        ProductSearchTool(), InventoryCheckTool(), CreateSaleOrderTool(),
+        CreateInvoiceTool(), CreateManufacturingOrderTool(),
+        SendEmailTool()
+    ],
     llm=llm,
     verbose=True
 )
@@ -70,26 +100,38 @@ def create_tasks(session_id, user_message, chat_history="", crm_context=""):
                     f"--- HISTORIAL RECIENTE (solo referencia, NO actúes sobre él) ---\n{chat_history}\n"
                     f"IMPORTANTE: El historial es SOLO para saber qué datos ya tienes. "
                     f"NO asumas que el usuario quiere continuar una conversación anterior. "
-                    f"NO menciones reuniones, citas o temas del historial a menos que el usuario los mencione PRIMERO.\n\n"
+                    f"NO menciones reuniones, citas, pedidos o temas del historial a menos que el usuario los mencione PRIMERO.\n\n"
+                    f"Las intenciones posibles son:\n"
+                    f"- SALUDO: El usuario saluda o se presenta\n"
+                    f"- CONSULTA: El usuario pregunta algo sobre productos, precios, servicios\n"
+                    f"- REUNIÓN: El usuario pide EXPLÍCITAMENTE agendar una reunión\n"
+                    f"- PEDIDO: El usuario quiere hacer un pedido de productos (ej: 'quiero 4 cajas de tortillas')\n"
+                    f"- OTRO: Cualquier otra cosa\n\n"
                     f"--- MENSAJE ACTUAL DEL USUARIO (esto es lo ÚNICO que debes responder) ---\n'{user_message}'",
-        expected_output="Identidad del cliente (nombre/email si están en CRM), y la intención del MENSAJE ACTUAL únicamente.",
-        agent=sales_agent
+        expected_output="Identidad del cliente (nombre/email si están en CRM), y la intención del MENSAJE ACTUAL clasificada como: SALUDO, CONSULTA, REUNIÓN, PEDIDO u OTRO.",
+        agent=secretary_agent
     )
 
     action_task = Task(
-        description=f"Responde AL MENSAJE ACTUAL del usuario (Tú eres Sofía):\n"
+        description=f"Responde AL MENSAJE ACTUAL del usuario (Tú eres {AGENT_NAME}):\n"
                     f"- Si dice 'hola' o un saludo → respóndele con un saludo cálido. Si ya lo conoces, salúdalo por nombre. NADA MÁS.\n"
-                    f"- Si pregunta algo → resuelve su consulta.\n"
+                    f"- Si pregunta algo → resuelve su consulta, busca en el catálogo si es sobre productos.\n"
                     f"- Si PIDE EXPLÍCITAMENTE una reunión → recaba datos faltantes y agenda.\n"
-                    f"- Si ya tienes los datos y propone una fecha/hora:\n"
+                    f"- Si quiere hacer un PEDIDO:\n"
+                    f"    a) Busca el producto con 'Search Products'.\n"
+                    f"    b) Verifica stock con 'Check Inventory'.\n"
+                    f"    c) Si hay stock → 'Create Sale Order' (necesitas su nombre y teléfono). Luego 'Create Invoice'.\n"
+                    f"    d) Si NO hay stock → informa al cliente y usa 'Create Manufacturing Order' para solicitar fabricación.\n"
+                    f"    e) Tras pedido exitoso → envía email con 'Send Email'.\n"
+                    f"- Si ya tienes los datos y propone una fecha/hora para reunión:\n"
                     f"    a) Valida con OdooCheckAvailabilityTool (RESTA {offset_hours}h para UTC).\n"
                     f"    b) Si está ocupado, proponle otro horario.\n"
                     f"    c) Si está libre, cierra con OdooFullBookingTool (restando {offset_hours}h para UTC).\n"
                     f"    d) Tras booking exitoso, envía email con SendEmailTool.\n\n"
-                    f"PROHIBIDO: NO menciones reuniones anteriores. NO asumas intenciones. Responde SOLO a lo que dice este mensaje.\n"
+                    f"PROHIBIDO: NO menciones pedidos o reuniones anteriores. NO asumas intenciones. Responde SOLO a lo que dice este mensaje.\n"
                     f"Mensaje: '{user_message}'",
         expected_output="Respuesta directa, cálida y corta al mensaje actual del usuario. Sin inventar contexto.",
-        agent=sales_agent,
+        agent=secretary_agent,
         context=[identify_task]
     )
     
@@ -123,7 +165,7 @@ def run_odoo_crew(session_id: str, user_message: str) -> str:
                 f"- Teléfono: {p_phone}\n"
                 f"INSTRUCCIÓN: Este usuario es un CLIENTE CONOCIDO. Llámalo '{p_name}' con total seguridad. "
                 f"NO le preguntes su nombre, NO le preguntes su email, NO le pidas confirmar quién es. "
-                f"YA TIENES TODOS SUS DATOS. Si pide agendar reunión, usa directamente estos datos."
+                f"YA TIENES TODOS SUS DATOS. Si pide agendar reunión o hacer un pedido, usa directamente estos datos."
             )
         else:
             crm_context = "El usuario es NUEVO, no está en nuestro CRM. Salúdalo cálidamente. Cuando sea necesario, averigua su nombre de forma natural."
@@ -131,7 +173,7 @@ def run_odoo_crew(session_id: str, user_message: str) -> str:
         log.info("[STEP 4/6] Creating CrewAI tasks")
         tasks = create_tasks(session_id, user_message, chat_history, crm_context)
         crew = Crew(
-            agents=[support_agent, sales_agent],
+            agents=[support_agent, secretary_agent],
             tasks=tasks,
             process=Process.sequential,
             verbose=True

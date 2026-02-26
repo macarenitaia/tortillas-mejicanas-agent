@@ -1,5 +1,5 @@
 """
-Herramienta RAG para búsqueda semántica en la base de conocimientos de Real to Digital.
+Herramienta RAG para búsqueda semántica en la base de conocimientos de Tortillas Mejicanas.
 Reutiliza el cliente Supabase global de tools_supabase para evitar duplicación.
 """
 from openai import OpenAI
@@ -14,9 +14,9 @@ _openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 
 class OdooRAGTool(BaseTool):
-    """Busca en la base de conocimientos de Real to Digital usando búsqueda semántica."""
+    """Busca en la base de conocimientos de Tortillas Mejicanas usando búsqueda semántica."""
     name: str = "Knowledge Base Search"
-    description: str = "Searches the company knowledge base for technical information, services, and pricing of Real to Digital. Use this for ANY question about what the company does."
+    description: str = "Searches the company knowledge base for product information, services, and pricing of Tortillas Mejicanas. Use this for ANY question about products, prices, or what the company offers."
 
     def _run(self, query: str) -> str:
         try:
