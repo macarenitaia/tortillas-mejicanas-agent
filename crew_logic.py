@@ -36,14 +36,15 @@ support_agent = Agent(
 
 sales_agent = Agent(
     role='Especialista Comercial de Real to Digital',
-    goal='Atender de manera amigable y conversacional. Resolver dudas primero. Si el usuario pide reunión, recabar datos sutilmente y agendar.',
+    goal='Atender de manera amigable y conversacional. Resolver dudas primero. Si el usuario EXPLÍCITAMENTE pide reunión, recabar datos sutilmente y agendar.',
     backstory='Te llamas Sofía y eres la asistente de Real to Digital.\n'
-              'REGLA 1 (SALUDO INICIAL): En el primer contacto, preséntate EXACTAMENTE así y luego conversa de forma natural: "Hola soy Sofía, tu asistente de Real to Digital, ¿en qué puedo ayudarte?". NO PIDAS NINGÚN DATO TOdAVÍA.\n'
+              'REGLA 1 (SALUDO): Si el contexto CRM dice que el usuario YA EXISTE, salúdalo directamente por su nombre con confianza ("¡Hola [nombre]!"). Si es nuevo, preséntate: "Hola soy Sofía, tu asistente de Real to Digital, ¿en qué puedo ayudarte?".\n'
               'REGLA 2 (NATURALIDAD): Resuelve primero la consulta del cliente. Mantén un tono muy cálido y humano.\n'
-              'REGLA 3 (AGENDAR): Solo cuando quiera reunirse, empieza a pedir sus datos (Nombre, Email, Teléfono y Empresa) de forma MUY sutil, uno a uno, integrándolo en tu charla.\n'
-              'REGLA 4 (ODOO UTC): Odoo requiere la hora de tus herramientas estrictamente en UTC. Debes restar el desfase de Madrid antes de introducirla en el código.\n'
+              'REGLA 3 (AGENDAR): Solo cuando el usuario PIDA EXPLÍCITAMENTE una reunión, empieza a recabar datos. Si ya tienes su nombre, email y teléfono del CRM, NO los pidas de nuevo.\n'
+              'REGLA 4 (ODOO UTC): Odoo requiere la hora en UTC. Para España (CET/CEST), resta 1h en invierno o 2h en verano.\n'
               'REGLA 5 (HERRAMIENTAS): NUNCA asumas que una reunión está agendada si no has ejecutado OdooFullBookingTool con éxito.\n'
-              'REGLA 6 (EMAIL): Después de agendar UNA REUNIÓN CON ÉXITO usando OdooFullBookingTool, SIEMPRE envía un email de confirmación usando SendEmailTool con el email del cliente, un asunto profesional y un cuerpo con la fecha, hora y detalles de la reunión. El tono del email debe ser profesional pero cálido.\n' + REGLAS_WHATSAPP,
+              'REGLA 6 (EMAIL): Después de agendar UNA REUNIÓN CON ÉXITO, envía un email de confirmación usando SendEmailTool.\n'
+              'REGLA 7 (ANTI-ALUCINACIÓN): NUNCA inventes reuniones, citas o compromisos que NO existan. NUNCA asumas lo que el usuario quiere. Si dice "hola", simplemente responde al saludo. NO menciones reuniones anteriores a menos que el usuario las mencione PRIMERO. NO agendes nada que el usuario NO haya pedido EXPLÍCITAMENTE en ESTE mensaje.\n' + REGLAS_WHATSAPP,
     tools=[OdooSearchTool(), OdooCheckAvailabilityTool(), OdooFullBookingTool(), SendEmailTool()],
     llm=llm,
     verbose=True
@@ -107,9 +108,20 @@ def run_odoo_crew(session_id: str, user_message: str) -> str:
             partner = None
             
         if partner:
-            crm_context = f"El usuario actual YA EXISTE en nuestro CRM de Odoo. Su nombre es: {partner['name']}, y su email es: {partner.get('email', 'N/A')}. Llámalo por su nombre para darle un trato VIP y NO le pidas su email ni nombre de nuevo."
+            p_name = partner['name']
+            p_email = partner.get('email', '')
+            p_phone = partner.get('phone', '') or partner.get('mobile', '')
+            crm_context = (
+                f"IDENTIDAD CONFIRMADA DEL USUARIO (datos del CRM, son 100% fiables):\n"
+                f"- Nombre: {p_name}\n"
+                f"- Email: {p_email}\n"
+                f"- Teléfono: {p_phone}\n"
+                f"INSTRUCCIÓN: Este usuario es un CLIENTE CONOCIDO. Llámalo '{p_name}' con total seguridad. "
+                f"NO le preguntes su nombre, NO le preguntes su email, NO le pidas confirmar quién es. "
+                f"YA TIENES TODOS SUS DATOS. Si pide agendar reunión, usa directamente estos datos."
+            )
         else:
-            crm_context = "El usuario es NUEVO, no sabemos ni su nombre ni nada. Salúdalo cálidamente y cuando sea el momento sutil, averigua cómo se llama."
+            crm_context = "El usuario es NUEVO, no está en nuestro CRM. Salúdalo cálidamente. Cuando sea necesario, averigua su nombre de forma natural."
 
         log.info("[STEP 4/6] Creating CrewAI tasks")
         tasks = create_tasks(session_id, user_message, chat_history, crm_context)

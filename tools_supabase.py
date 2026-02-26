@@ -84,10 +84,15 @@ def get_recent_messages(session_phone: str, limit: int = 5) -> str:
         if not tenant_id or not lead_id:
             return "No hay historial previo de conversación."
         
+        # Solo recuperar mensajes de las últimas 4 horas (sesión activa)
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+        
         res = (supabase.table("messages")
                .select("role, content")
                .eq("lead_id", lead_id)
                .eq("tenant_id", tenant_id)
+               .gte("created_at", cutoff)
                .order("created_at", desc=True)
                .limit(limit)
                .execute())
@@ -95,7 +100,7 @@ def get_recent_messages(session_phone: str, limit: int = 5) -> str:
         if not res.data:
             return "No hay historial previo de conversación."
             
-        messages_str = "Historial reciente de esta conversación (útil para no volver a pedir datos):\n"
+        messages_str = "Historial reciente de esta conversación (últimas horas):\n"
         for msg in reversed(res.data):
             display_role = "AGENTE" if msg['role'] == "assistant" else "USUARIO"
             messages_str += f"[{display_role}]: {msg['content']}\n"
