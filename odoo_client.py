@@ -95,40 +95,30 @@ class OdooClient:
         
         # 1) Buscar en res.partner (clientes/contactos)
         for variant in search_variants:
-            domain = [
-                '|',
-                ('phone', 'ilike', variant),
-                ('mobile', 'ilike', variant)
-            ]
+            domain = [('phone', 'ilike', variant)]
             partner_ids = self._execute_kw_with_retry('res.partner', 'search', [domain])
             if partner_ids:
                 partners = self._execute_kw_with_retry(
                     'res.partner', 'read', [partner_ids],
-                    {'fields': ['name', 'email', 'phone', 'mobile']}
+                    {'fields': ['name', 'email', 'phone']}
                 )
                 log.info(f"Partner found: {partners[0]['name']}")
                 return partners[0]
         
         # 2) Buscar en crm.lead (leads/oportunidades)
         for variant in search_variants:
-            domain = [
-                '|',
-                ('phone', 'ilike', variant),
-                ('mobile', 'ilike', variant)
-            ]
+            domain = [('phone', 'ilike', variant)]
             lead_ids = self._execute_kw_with_retry('crm.lead', 'search', [domain])
             if lead_ids:
                 leads = self._execute_kw_with_retry(
                     'crm.lead', 'read', [lead_ids],
-                    {'fields': ['contact_name', 'email_from', 'phone', 'mobile', 'partner_name']}
+                    {'fields': ['contact_name', 'email_from', 'phone', 'partner_name']}
                 )
                 lead = leads[0]
-                # Mapear campos de lead a formato de partner para compatibilidad
                 result = {
                     'name': lead.get('contact_name') or lead.get('partner_name') or 'Lead',
                     'email': lead.get('email_from', ''),
                     'phone': lead.get('phone', ''),
-                    'mobile': lead.get('mobile', ''),
                 }
                 log.info(f"Lead found: {result['name']}")
                 return result
@@ -407,45 +397,69 @@ class OdooClient:
     # ==========================================
 
     def create_product(self, name: str, price: float, sku: str = None) -> int:
-        """Crea un nuevo producto en Odoo."""
-        self._ensure_authenticated()
+        """Crea un nuevo producto en Odoo (product.template)."""
         vals = {
             'name': name,
             'list_price': price,
-            'type': 'consu',
+            'type': 'consu',  # Odoo SaaS 19: 'consu' = Goods (no stock tracking)
             'default_code': sku,
             'sale_ok': True,
             'purchase_ok': True,
         }
-        product_id = self.models.execute_kw(
-            self.db, self.uid, self.password,
-            'product.template', 'create', [vals]
-        )
+        product_id = self._execute_kw_with_retry('product.template', 'create', [vals])
+        log.info(f"Product created: {name} (template ID: {product_id})")
         return product_id
 
-    def update_product_stock(self, product_id: int, quantity: float):
-        """Actualiza el stock de un producto (requiere product.product ID)."""
-        self._ensure_authenticated()
+    def get_product_variant_id(self, template_id: int) -> int:
+        """Obtiene el product.product ID a partir del product.template ID."""
+        variants = self._execute_kw_with_retry(
+            'product.product', 'search',
+            [[('product_tmpl_id', '=', template_id)]],
+            {'limit': 1}
+        )
+        return variants[0] if variants else None
+
+    def update_product_stock(self, product_id: int, quantity: float) -> bool:
+        """Actualiza el stock de un producto via stock.quant (requiere product.product ID)."""
         try:
-            location_id = self.models.execute_kw(
-                self.db, self.uid, self.password,
-                'stock.location', 'search', [[['usage', '=', 'internal']]], {'limit': 1}
-            )[0]
-            
-            vals = {
-                'product_id': product_id,
-                'location_id': location_id,
-                'inventory_quantity': quantity,
-            }
-            quant_id = self.models.execute_kw(
-                self.db, self.uid, self.password,
-                'stock.quant', 'create', [vals]
+            # Encontrar ubicación interna de stock
+            location_ids = self._execute_kw_with_retry(
+                'stock.location', 'search',
+                [[('usage', '=', 'internal')]],
+                {'limit': 1}
             )
-            self.models.execute_kw(
-                self.db, self.uid, self.password,
-                'stock.quant', 'action_apply_inventory', [quant_id]
+            if not location_ids:
+                log.error("No internal stock location found")
+                return False
+
+            # Buscar quant existente o crear nuevo
+            existing = self._execute_kw_with_retry(
+                'stock.quant', 'search',
+                [[('product_id', '=', product_id), ('location_id', '=', location_ids[0])]],
+                {'limit': 1}
             )
+
+            if existing:
+                self._execute_kw_with_retry(
+                    'stock.quant', 'write',
+                    [existing, {'inventory_quantity': quantity}]
+                )
+                quant_id = existing[0]
+            else:
+                quant_id = self._execute_kw_with_retry(
+                    'stock.quant', 'create',
+                    [{'product_id': product_id, 'location_id': location_ids[0], 'inventory_quantity': quantity}]
+                )
+
+            # Aplicar el ajuste de inventario
+            self._execute_kw_with_retry(
+                'stock.quant', 'action_apply_inventory',
+                [[quant_id if isinstance(quant_id, int) else quant_id]]
+            )
+            log.info(f"Stock updated for product {product_id}: {quantity} units")
             return True
-        except Exception:
+        except Exception as e:
+            log.error(f"Stock update failed: {type(e).__name__}: {e}")
             return False
+
 
