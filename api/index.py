@@ -6,9 +6,10 @@ import httpx
 import asyncio
 import hashlib
 import hmac
+import time
+from collections import defaultdict
 from typing import Dict
 from pydantic import BaseModel, field_validator, ValidationError
-import re
 
 from utils import normalize_phone
 
@@ -171,9 +172,10 @@ class ChatRequest(BaseModel):
     @field_validator('message')
     @classmethod
     def validate_message(cls, v: str) -> str:
-        if not v.strip():
+        clean = v.strip()
+        if not clean:
             raise ValueError("Falta el mensaje")
-        return v
+        return clean
 
 @app.post("/api/chat")
 async def chat(request: Request):
@@ -316,7 +318,10 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
                                 continue
                             
                             if message.get("type") == "text":
-                                msg_text: str = message["text"]["body"]
+                                msg_text: str = message.get("text", {}).get("body", "").strip()
+                                if not msg_text:
+                                    log.warning("Received text message without body. Skipping.")
+                                    continue
                                 background_tasks.add_task(process_whatsapp_message, phone_number, msg_text)
                             
         return Response(status_code=200)

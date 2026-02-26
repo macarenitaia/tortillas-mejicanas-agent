@@ -186,7 +186,7 @@ def run_odoo_crew(session_id: str, user_message: str) -> str:
         else:
             crm_context = (
                 f"IDENTIDAD DEL USUARIO: Es un usuario NUEVO (no está en el CRM). "
-                f"NO TIENES su nombre, ni su email, ni su dirección. SOLO su teléfono actual ({session_id.split('_')[-1]}).\n"
+                f"NO TIENES su nombre, ni su email, ni su dirección. SOLO su teléfono actual ({session_id}).\n"
                 f"INSTRUCCIÓN: Si el usuario quiere hacer un PEDIDO o AGENDAR REUNIÓN, es OBLIGATORIO que le pidas su nombre, email (o al menos nombre) y su dirección de entrega (si es pedido) de forma amable ANTES de intentar usar las herramientas."
             )
 

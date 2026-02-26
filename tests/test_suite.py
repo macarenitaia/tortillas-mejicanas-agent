@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 # Setup path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import normalize_phone
 
 
 # ==========================================
@@ -86,6 +87,15 @@ class TestAPIEndpoints:
         )
         assert response.status_code == 400
 
+    def test_chat_with_blank_message_returns_400(self):
+        """POST /api/chat con mensaje en blanco devuelve 400."""
+        response = self.client.post(
+            "/api/chat",
+            json={"session_id": "+34666000111", "message": "   "},
+            headers={"Authorization": "Bearer test-secret-123"}
+        )
+        assert response.status_code == 400
+
     def test_chat_without_session_id_returns_400(self):
         """POST /api/chat sin session_id o con default_session devuelve 400."""
         response = self.client.post(
@@ -120,6 +130,19 @@ class TestAPIEndpoints:
         )
         assert response_letters.status_code == 400
         assert "session_id" in response_letters.json()["error"]
+
+    @patch("api.index.run_odoo_crew")
+    @patch("api.index.DEV_MODE", True)
+    def test_chat_without_auth_keys_dev_mode_returns_200(self, mock_crew):
+        """Si falta API_SECRET_KEY y DEV_MODE está activo, permite acceso."""
+        mock_crew.return_value = "ok"
+        with patch("api.index.API_SECRET_KEY", ""):
+            response = self.client.post(
+                "/api/chat",
+                json={"session_id": "+34666000111", "message": "Hola"},
+                headers={"Authorization": "Bearer anything"}
+            )
+            assert response.status_code == 200
 
     @patch("api.index.run_odoo_crew")
     def test_chat_success(self, mock_crew):
@@ -172,6 +195,18 @@ class TestAPIEndpoints:
                 }
             )
             assert response.status_code == 403
+
+    @patch("api.index.DEV_MODE", True)
+    def test_webhook_post_missing_secret_dev_mode_returns_200(self):
+        """POST /api/whatsapp sin secret con DEV_MODE activo permite paso."""
+        with patch("api.index.WHATSAPP_APP_SECRET", ""):
+            body = json.dumps({"object": "whatsapp_business_account", "entry": []})
+            response = self.client.post(
+                "/api/whatsapp",
+                content=body.encode(),
+                headers={"Content-Type": "application/json"}
+            )
+            assert response.status_code == 200
 
     def test_webhook_post_valid_signature(self):
         """POST /api/whatsapp con firma válida devuelve 200."""
@@ -376,3 +411,25 @@ class TestUtilities:
         # Verificar que el logger se crea sin errores
         assert logger is not None
         assert logger.name == "test_json_output"
+
+
+class TestPhoneNormalization:
+    """Tests unitarios para normalize_phone."""
+
+    def test_normalize_phone_keeps_plus_and_cleans_symbols(self):
+        assert normalize_phone("+34 666-000-111") == "+34666000111"
+
+    def test_normalize_phone_adds_plus(self):
+        assert normalize_phone("34666000111") == "+34666000111"
+
+    def test_normalize_phone_invalid_letters(self):
+        with pytest.raises(ValueError):
+            normalize_phone("abc")
+
+    def test_normalize_phone_empty(self):
+        with pytest.raises(ValueError):
+            normalize_phone("")
+
+    def test_normalize_phone_too_long(self):
+        with pytest.raises(ValueError):
+            normalize_phone("1234567890123456")
