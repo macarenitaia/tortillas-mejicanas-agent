@@ -38,8 +38,8 @@ def _mask_phone(phone: str) -> str:
 def _verify_meta_signature(request_body: bytes, signature_header: str) -> bool:
     """Valida la firma X-Hub-Signature-256 de Meta."""
     if not WHATSAPP_APP_SECRET:
-        log.warning("WHATSAPP_APP_SECRET missing. Dev mode active (Bypassing signature validation).")
-        return True
+        log.warning("WHATSAPP_APP_SECRET missing. Declining webhook verification.")
+        return False
     if not signature_header:
         log.warning("Signature header missing. Declining webhook verification.")
         return False
@@ -51,8 +51,8 @@ def _verify_meta_signature(request_body: bytes, signature_header: str) -> bool:
 def _check_bearer_token(request: Request) -> bool:
     """Valida el Bearer Token en el header Authorization."""
     if not API_SECRET_KEY:
-        log.warning("API_SECRET_KEY missing. Dev mode active (Bypassing API authorization).")
-        return True
+        log.warning("API_SECRET_KEY missing. Declining API authorization.")
+        return False
     auth = request.headers.get("Authorization", "")
     return auth == f"Bearer {API_SECRET_KEY}"
 
@@ -165,6 +165,8 @@ async def chat(request: Request):
         
         if not message:
             return JSONResponse(status_code=400, content={"error": "Falta el mensaje"})
+        if session_id == "default_session" or not session_id:
+            return JSONResponse(status_code=400, content={"error": "Falta el session_id (número de teléfono)"})
         
         # Ejecutar en hilo separado para no bloquear el event loop
         result = await asyncio.to_thread(run_odoo_crew, session_id, message)
