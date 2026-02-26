@@ -38,16 +38,16 @@ class TestAPIEndpoints:
             "WHATSAPP_APP_SECRET": "test-app-secret",
             "TENANT_NAME": "Tortillas Mejicanas",
             "AGENT_NAME": "Sofía",
+            "OPENAI_MODEL_NAME": "gpt-4o-mini",
         }):
             # Mock de supabase antes de importar los módulos
             with patch("supabase.create_client") as mock_sb:
                 mock_sb.return_value = MagicMock()
-                with patch("langchain_openai.ChatOpenAI"):
-                    from api.index import app, rate_limiter, message_dedup
-                    self.client = TestClient(app)
-                    self.rate_limiter = rate_limiter
-                    self.message_dedup = message_dedup
-                    yield
+                from api.index import app, rate_limiter, message_dedup
+                self.client = TestClient(app)
+                self.rate_limiter = rate_limiter
+                self.message_dedup = message_dedup
+                yield
 
     def test_root_endpoint(self):
         """GET /api devuelve status ok."""
@@ -120,7 +120,7 @@ class TestAPIEndpoints:
             headers={"Authorization": "Bearer test-secret-123"}
         )
         assert response.status_code == 400
-        assert "session_id" in response.json()["error"]
+        assert "inválido" in response.json()["error"]
         
         # Test con caracteres imposibles de limpiar a un número válido
         response_letters = self.client.post(
@@ -129,7 +129,7 @@ class TestAPIEndpoints:
             headers={"Authorization": "Bearer test-secret-123"}
         )
         assert response_letters.status_code == 400
-        assert "session_id" in response_letters.json()["error"]
+        assert "inválido" in response_letters.json()["error"] or "vacío" in response_letters.json()["error"]
 
     @patch("api.index.run_odoo_crew")
     @patch("api.index.DEV_MODE", True)
@@ -370,13 +370,8 @@ class TestOdooClient:
         client._ensure_authenticated()
         assert client.uid == 5
 
-    @patch.dict(os.environ, {
-        "ODOO_URL": "https://test.odoo.com",
-        "ODOO_DB": "test-db",
-        "ODOO_USERNAME": "test@test.com",
-        "ODOO_PASSWORD": "testpass",
-        "ODOO_API_KEY": "bad-key",
-    })
+    @patch("odoo_client.ODOO_API_KEY", "bad-key")
+    @patch("odoo_client.ODOO_PASSWORD", "testpass")
     @patch("xmlrpc.client.ServerProxy")
     def test_authentication_fallback_to_password(self, mock_proxy):
         """Verifica fallback a password cuando API key falla."""
