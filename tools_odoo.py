@@ -10,7 +10,10 @@ class OdooSearchTool(BaseTool):
     def _run(self, phone: str) -> str:
         partner = odoo.search_contact_by_phone(phone)
         if partner:
-            return f"Customer Found: {partner['name']} (ID: {partner['id']}). Email: {partner.get('email', 'N/A')}"
+            info = f"Nombre: {partner.get('name', 'N/A')}\nEmail: {partner.get('email', 'N/A')}\nTeléfono: {partner.get('phone', 'N/A')}"
+            if 'id' in partner:
+                info += f"\nID: {partner['id']}"
+            return info
         return "Customer not found in Odoo."
 
 class OdooCheckAvailabilityTool(BaseTool):

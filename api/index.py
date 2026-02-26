@@ -38,8 +38,10 @@ def _mask_phone(phone: str) -> str:
 def _verify_meta_signature(request_body: bytes, signature_header: str) -> bool:
     """Valida la firma X-Hub-Signature-256 de Meta."""
     if not WHATSAPP_APP_SECRET:
-        return True  # Dev mode
+        log.warning("WHATSAPP_APP_SECRET missing. Declining webhook verification.")
+        return False
     if not signature_header:
+        log.warning("Signature header missing. Declining webhook verification.")
         return False
     expected = "sha256=" + hmac.HMAC(
         WHATSAPP_APP_SECRET.encode(), request_body, hashlib.sha256
@@ -49,7 +51,8 @@ def _verify_meta_signature(request_body: bytes, signature_header: str) -> bool:
 def _check_bearer_token(request: Request) -> bool:
     """Valida el Bearer Token en el header Authorization."""
     if not API_SECRET_KEY:
-        return True  # Dev mode
+        log.warning("API_SECRET_KEY missing. Declining API authorization.")
+        return False
     auth = request.headers.get("Authorization", "")
     return auth == f"Bearer {API_SECRET_KEY}"
 
@@ -162,6 +165,8 @@ async def chat(request: Request):
         
         if not message:
             return JSONResponse(status_code=400, content={"error": "Falta el mensaje"})
+        if session_id == "default_session" or not session_id:
+            return JSONResponse(status_code=400, content={"error": "Falta el session_id (número de teléfono)"})
         
         # Ejecutar en hilo separado para no bloquear el event loop
         result = await asyncio.to_thread(run_odoo_crew, session_id, message)
@@ -264,7 +269,7 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
                         # --- Deduplicación ---
                         if message_dedup.is_duplicate(message_id):
                             log.info(f"Duplicate message {message_id[:8]}*** skipped")
-                            return Response(status_code=200)
+                            continue
                         
                         if message.get("type") == "text":
                             msg_text: str = message["text"]["body"]

@@ -88,6 +88,10 @@ class OdooClient:
         """Busca un contacto por teléfono en res.partner Y crm.lead. Reconoce clientes y leads."""
         clean_phone = ''.join(filter(str.isdigit, phone))
         
+        if len(clean_phone) < 6:
+            log.warning(f"Phone number too short for search: {phone}")
+            return None
+        
         # Variantes de búsqueda: número completo + últimos 9 dígitos (sin prefijo país)
         search_variants = [clean_phone]
         if len(clean_phone) > 9:
