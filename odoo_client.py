@@ -85,20 +85,30 @@ class OdooClient:
             log.error(f"Rollback failed: {model}:{record_id}")
 
     def search_partner_by_phone(self, phone: str) -> Optional[Dict]:
-        """Busca un partner por teléfono o móvil."""
+        """Busca un partner por teléfono o móvil. Prueba número completo y últimos 9 dígitos."""
         clean_phone = ''.join(filter(str.isdigit, phone))
-        domain = [
-            '|',
-            ('phone', 'ilike', clean_phone),
-            ('mobile', 'ilike', clean_phone)
-        ]
-        partner_ids = self._execute_kw_with_retry('res.partner', 'search', [domain])
-        if partner_ids:
-            partners = self._execute_kw_with_retry(
-                'res.partner', 'read', [partner_ids],
-                {'fields': ['name', 'email', 'phone', 'mobile']}
-            )
-            return partners[0]
+        
+        # Intentar con el número completo y con los últimos 9 dígitos (sin prefijo país)
+        search_variants = [clean_phone]
+        if len(clean_phone) > 9:
+            search_variants.append(clean_phone[-9:])  # Ej: 34606523222 → 606523222
+        
+        for variant in search_variants:
+            domain = [
+                '|',
+                ('phone', 'ilike', variant),
+                ('mobile', 'ilike', variant)
+            ]
+            partner_ids = self._execute_kw_with_retry('res.partner', 'search', [domain])
+            if partner_ids:
+                partners = self._execute_kw_with_retry(
+                    'res.partner', 'read', [partner_ids],
+                    {'fields': ['name', 'email', 'phone', 'mobile']}
+                )
+                log.info(f"Partner found: {partners[0]['name']} (variant: {variant[:4]}***)")
+                return partners[0]
+        
+        log.info(f"No partner found for phone ***{clean_phone[-4:]}")
         return None
 
     def create_lead(self, name: str, phone: str, email: Optional[str] = None, description: Optional[str] = None) -> int:
