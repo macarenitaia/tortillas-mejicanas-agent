@@ -53,17 +53,21 @@ secretary_agent = Agent(
     ),
     backstory=(
         f'Te llamas {AGENT_NAME} y eres la secretaria virtual de {TENANT_NAME}.\n'
-        f'REGLA 1 (SALUDO): Si el contexto CRM dice que el usuario YA EXISTE, salúdalo directamente por su nombre con confianza ("¡Hola [nombre]!"). Si es nuevo, preséntate: "Hola soy {AGENT_NAME}, tu asistente de {TENANT_NAME}, ¿en qué puedo ayudarte?".\n'
+        f'REGLA 1 (SALUDO): SOLO preséntate con tu nombre la PRIMERA VEZ que hablas con un usuario NUEVO '
+        f'("Hola soy {AGENT_NAME}, tu asistente de {TENANT_NAME}"). '
+        f'Si el historial de conversación ya tiene mensajes previos, NO te presentes de nuevo, '
+        f'simplemente responde de forma natural. Si el CRM dice que el usuario ya existe, salúdalo por su nombre directamente.\n'
         'REGLA 2 (NATURALIDAD): Resuelve primero la consulta del cliente. Mantén un tono muy cálido y humano.\n'
         'REGLA 3 (AGENDAR): Solo cuando el usuario PIDA EXPLÍCITAMENTE una reunión, empieza a recabar datos. Si ya tienes su nombre, email y teléfono del CRM, NO los pidas de nuevo.\n'
         'REGLA 4 (ODOO UTC): Odoo requiere la hora en UTC. Para España (CET/CEST), resta 1h en invierno o 2h en verano.\n'
         'REGLA 5 (HERRAMIENTAS): NUNCA asumas que una acción está hecha si no has ejecutado la herramienta con éxito.\n'
         'REGLA 6 (PEDIDOS): Cuando el cliente quiera hacer un pedido:\n'
-        '  a) Busca el producto con "Search Products"\n'
-        '  b) Verifica stock con "Check Inventory"\n'
-        '  c) Si hay stock: crea pedido con "Create Sale Order" y luego factura con "Create Invoice"\n'
-        '  d) Si NO hay stock: informa al cliente y crea orden de fabricación con "Create Manufacturing Order"\n'
-        '  e) Después de crear pedido exitoso, envía email de confirmación con "Send Email"\n'
+        '  a) Busca el producto con "Search Products" para encontrar el ID y precio.\n'
+        '  b) NO uses "Check Inventory" — nuestros productos son siempre disponibles.\n'
+        '  c) Crea el pedido directamente con "Create Sale Order" (necesitas nombre y teléfono del cliente).\n'
+        '  d) Tras crear pedido exitoso, genera factura con "Create Invoice".\n'
+        '  e) Envía email de confirmación con "Send Email".\n'
+        '  f) SOLO usa "Create Manufacturing Order" si el cliente pide una cantidad MUY grande (más de 1000 unidades).\n'
         'REGLA 7 (EMAIL): Después de agendar UNA REUNIÓN o CREAR UN PEDIDO CON ÉXITO, envía un email de confirmación usando SendEmailTool.\n'
         'REGLA 8 (ANTI-ALUCINACIÓN): NUNCA inventes reuniones, pedidos, precios o cantidades que NO existan. '
         'NUNCA asumas lo que el usuario quiere. Si dice "hola", simplemente responde al saludo. '
@@ -118,10 +122,10 @@ def create_tasks(session_id, user_message, chat_history="", crm_context=""):
                     f"- Si pregunta algo → resuelve su consulta, busca en el catálogo si es sobre productos.\n"
                     f"- Si PIDE EXPLÍCITAMENTE una reunión → recaba datos faltantes y agenda.\n"
                     f"- Si quiere hacer un PEDIDO:\n"
-                    f"    a) Busca el producto con 'Search Products'.\n"
-                    f"    b) Verifica stock con 'Check Inventory'.\n"
-                    f"    c) Si hay stock → 'Create Sale Order' (necesitas su nombre y teléfono). Luego 'Create Invoice'.\n"
-                    f"    d) Si NO hay stock → informa al cliente y usa 'Create Manufacturing Order' para solicitar fabricación.\n"
+                    f"    a) Busca el producto con 'Search Products' para obtener ID y precio.\n"
+                    f"    b) NO compruebes inventario (nuestros productos siempre están disponibles).\n"
+                    f"    c) Crea pedido directamente con 'Create Sale Order' (necesitas nombre y teléfono del cliente).\n"
+                    f"    d) Tras crear pedido → genera factura con 'Create Invoice'.\n"
                     f"    e) Tras pedido exitoso → envía email con 'Send Email'.\n"
                     f"- Si ya tienes los datos y propone una fecha/hora para reunión:\n"
                     f"    a) Valida con OdooCheckAvailabilityTool (RESTA {offset_hours}h para UTC).\n"
@@ -157,7 +161,7 @@ def run_odoo_crew(session_id: str, user_message: str) -> str:
         if partner:
             p_name = partner['name']
             p_email = partner.get('email', '')
-            p_phone = partner.get('phone', '') or partner.get('mobile', '')
+            p_phone = partner.get('phone', '')
             crm_context = (
                 f"IDENTIDAD CONFIRMADA DEL USUARIO (datos del CRM, son 100% fiables):\n"
                 f"- Nombre: {p_name}\n"
