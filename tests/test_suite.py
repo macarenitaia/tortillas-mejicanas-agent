@@ -118,13 +118,13 @@ class TestAPIEndpoints:
         mock_crew.return_value = "¡Hola! Soy Sofía, tu asistente de Tortillas Mejicanas 🌮"
         response = self.client.post(
             "/api/chat",
-            json={"session_id": "test123", "message": "Hola"},
+            json={"session_id": "34666000111", "message": "Hola"},
             headers={"Authorization": "Bearer test-secret-123"}
         )
         assert response.status_code == 200
         data = response.json()
         assert "Tortillas" in data["reply"] or "Sofía" in data["reply"]
-        assert data["session_id"] == "test123"
+        assert data["session_id"] == "34666000111"
 
     def test_webhook_get_verification(self):
         """GET /api/whatsapp verificación de webhook de Meta."""

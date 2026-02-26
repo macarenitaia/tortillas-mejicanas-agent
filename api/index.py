@@ -40,8 +40,12 @@ def _mask_phone(phone: str) -> str:
 def _verify_meta_signature(request_body: bytes, signature_header: str) -> bool:
     """Valida la firma X-Hub-Signature-256 de Meta."""
     if not WHATSAPP_APP_SECRET:
-        log.warning("WHATSAPP_APP_SECRET missing. Declining webhook verification.")
-        return False
+        if DEV_MODE:
+            log.warning("WHATSAPP_APP_SECRET missing. Dev mode active (Bypassing signature validation).")
+            return True
+        else:
+            log.warning("WHATSAPP_APP_SECRET missing. Declining webhook verification.")
+            return False
     if not signature_header:
         log.warning("Signature header missing. Declining webhook verification.")
         return False
@@ -53,8 +57,12 @@ def _verify_meta_signature(request_body: bytes, signature_header: str) -> bool:
 def _check_bearer_token(request: Request) -> bool:
     """Valida el Bearer Token en el header Authorization."""
     if not API_SECRET_KEY:
-        log.warning("API_SECRET_KEY missing. Declining API authorization.")
-        return False
+        if DEV_MODE:
+            log.warning("API_SECRET_KEY missing. Dev mode active (Bypassing API authorization).")
+            return True
+        else:
+            log.warning("API_SECRET_KEY missing. Declining API authorization.")
+            return False
     auth = request.headers.get("Authorization", "")
     return auth == f"Bearer {API_SECRET_KEY}"
 
@@ -295,6 +303,10 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
                             phone_number: str = message.get("from", "")
                             if not phone_number and value.get("contacts"):
                                 phone_number = value["contacts"][0].get("wa_id", "")
+                            
+                            if not phone_number:
+                                log.warning("Received message without phone_number. Skipping.")
+                                continue
                             
                             message_id: str = message.get("id", "")
                             
