@@ -9,6 +9,8 @@ import hmac
 import time
 from collections import defaultdict
 from typing import Dict, Tuple
+from pydantic import BaseModel, field_validator
+import re
 
 # Añadir el directorio raíz al path para importar los módulos locales
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -146,6 +148,28 @@ async def health_check():
 # ==========================================
 # ENDPOINT DE CHAT GENÉRICO (Pruebas Web)
 # ==========================================
+
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+
+    @field_validator('session_id')
+    @classmethod
+    def validate_session_id(cls, v: str) -> str:
+        if v == "default_session" or not v:
+            raise ValueError("session_id requerido")
+        clean = re.sub(r'[^\d+]', '', v)
+        if not re.match(r'^\+?\d{6,15}$', clean):
+            raise ValueError("session_id (teléfono) inválido. Debe contener entre 6 y 15 dígitos.")
+        return clean
+
+    @field_validator('message')
+    @classmethod
+    def validate_message(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Falta el mensaje")
+        return v
+
 @app.post("/api/chat")
 async def chat(request: Request):
     # --- Autenticación ---
@@ -160,15 +184,17 @@ async def chat(request: Request):
     
     try:
         data = await request.json()
-        session_id: str = data.get("session_id", "")
-        message: str = data.get("message", "")
-        
-        if not session_id or session_id == "default_session":
-            return JSONResponse(status_code=400, content={"error": "session_id requerido"})
-        if not message:
-            return JSONResponse(status_code=400, content={"error": "Falta el mensaje"})
-        if session_id == "default_session" or not session_id:
-            return JSONResponse(status_code=400, content={"error": "Falta el session_id (número de teléfono)"})
+        try:
+            chat_req = ChatRequest(**data)
+        except ValueError as ve:
+            from pydantic import ValidationError
+            if isinstance(ve, ValidationError):
+                error_msgs = [err.get("msg") for err in ve.errors()]
+                return JSONResponse(status_code=400, content={"error": " | ".join(error_msgs)})
+            return JSONResponse(status_code=400, content={"error": str(ve)})
+            
+        session_id = chat_req.session_id
+        message = chat_req.message
         
         # Ejecutar en hilo separado para no bloquear el event loop
         result = await asyncio.to_thread(run_odoo_crew, session_id, message)
@@ -264,18 +290,26 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
                     value = change.get("value", {})
                     
                     if "messages" in value:
-                        message = value["messages"][0]
-                        phone_number: str = value["contacts"][0]["wa_id"]
-                        message_id: str = message.get("id", "")
-                        
-                        # --- Deduplicación ---
-                        if message_id and message_dedup.is_duplicate(message_id):
-                            log.info(f"Duplicate message {message_id[:8]}*** skipped")
-                            continue
-                        
-                        if message.get("type") == "text":
-                            msg_text: str = message["text"]["body"]
-                            background_tasks.add_task(process_whatsapp_message, phone_number, msg_text)
+                        # Iterar sobre todos los mensajes en lugar de coger solo el originario
+                        for message in value.get("messages", []):
+                            phone_number: str = message.get("from", "")
+                            if not phone_number and value.get("contacts"):
+                                phone_number = value["contacts"][0].get("wa_id", "")
+                            
+                            message_id: str = message.get("id", "")
+                            
+                            # --- Normalizar Formato E.164 básico ---
+                            if phone_number and not phone_number.startswith('+'):
+                                phone_number = f"+{phone_number}"
+                                
+                            # --- Deduplicación ---
+                            if message_id and message_dedup.is_duplicate(message_id):
+                                log.info(f"Duplicate message {message_id[:8]}*** skipped")
+                                continue
+                            
+                            if message.get("type") == "text":
+                                msg_text: str = message["text"]["body"]
+                                background_tasks.add_task(process_whatsapp_message, phone_number, msg_text)
                             
         return Response(status_code=200)
 

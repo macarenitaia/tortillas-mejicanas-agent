@@ -147,7 +147,11 @@ class OdooClient:
 
     def schedule_meeting(self, partner_id: int, summary: str, start_date: str, duration: float = 1.0) -> int:
         """Agenda un evento en el calendario."""
-        dt_start = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
+        try:
+            dt_start = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            raise ValueError(f"Formato de fecha inválido: '{start_date}'. Usa 'YYYY-MM-DD HH:MM:SS'.")
+            
         dt_stop = dt_start + timedelta(hours=duration)
         vals = {
             'name': summary,
@@ -195,7 +199,11 @@ class OdooClient:
                 'type': 'opportunity'
             }])
 
-            dt_start = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
+            try:
+                dt_start = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                raise ValueError(f"Formato de fecha inválido: '{start_date}'. Usa 'YYYY-MM-DD HH:MM:SS'.")
+                
             dt_stop = dt_start + timedelta(hours=duration)
 
             event_id = self._execute_kw_with_retry('calendar.event', 'create', [{

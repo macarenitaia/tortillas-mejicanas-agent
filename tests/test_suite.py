@@ -102,6 +102,16 @@ class TestAPIEndpoints:
         )
         assert response2.status_code == 400
 
+    def test_chat_with_invalid_session_id_returns_400(self):
+        """POST /api/chat con session_id mal formateado (menos de 6 dígitos) devuelve 400."""
+        response = self.client.post(
+            "/api/chat",
+            json={"session_id": "123", "message": "Hola"},
+            headers={"Authorization": "Bearer test-secret-123"}
+        )
+        assert response.status_code == 400
+        assert "session_id" in response.json()["error"]
+
     @patch("api.index.run_odoo_crew")
     def test_chat_success(self, mock_crew):
         """POST /api/chat con auth válida devuelve respuesta del agente."""
@@ -171,6 +181,38 @@ class TestAPIEndpoints:
             }
         )
         assert response.status_code == 200
+
+    @patch("api.index.process_whatsapp_message")
+    def test_webhook_post_multiple_messages(self, mock_process):
+        """POST /api/whatsapp con un payload con múltiples mensajes los procesa todos."""
+        body = json.dumps({
+            "object": "whatsapp_business_account",
+            "entry": [{
+                "changes": [{
+                    "value": {
+                        "messages": [
+                            {"from": "34666000111", "id": "msg_001", "type": "text", "text": {"body": "First"}},
+                            {"from": "34666000222", "id": "msg_002", "type": "text", "text": {"body": "Second"}}
+                        ]
+                    }
+                }]
+            }]
+        })
+        body_bytes = body.encode()
+        signature = "sha256=" + hmac.HMAC(
+            b"test-app-secret", body_bytes, hashlib.sha256
+        ).hexdigest()
+        
+        response = self.client.post(
+            "/api/whatsapp",
+            content=body_bytes,
+            headers={
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": signature
+            }
+        )
+        assert response.status_code == 200
+        assert mock_process.call_count == 2
 
 
 # ==========================================
@@ -244,6 +286,21 @@ class TestOdooClient:
         from odoo_client import _mask_phone
         assert _mask_phone("34600112233") == "***2233"
         assert _mask_phone("123") == "***"
+
+    @patch.dict(os.environ, {
+        "ODOO_URL": "https://test.odoo.com",
+        "ODOO_DB": "test-db",
+        "ODOO_USERNAME": "test",
+        "ODOO_PASSWORD": "test",
+        "ODOO_API_KEY": "",
+    })
+    def test_schedule_meeting_invalid_date(self):
+        from odoo_client import OdooClient
+        client = OdooClient()
+        import pytest
+        with pytest.raises(ValueError) as exc:
+            client.schedule_meeting(1, "Test", "2024-01-01") # Falta HH:MM:SS
+        assert "Formato de fecha inválido" in str(exc.value)
 
     @patch.dict(os.environ, {
         "ODOO_URL": "https://test.odoo.com",
