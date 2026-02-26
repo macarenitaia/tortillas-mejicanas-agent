@@ -122,11 +122,12 @@ def create_tasks(session_id, user_message, chat_history="", crm_context=""):
                     f"- Si pregunta algo → resuelve su consulta, busca en el catálogo si es sobre productos.\n"
                     f"- Si PIDE EXPLÍCITAMENTE una reunión → recaba datos faltantes y agenda.\n"
                     f"- Si quiere hacer un PEDIDO:\n"
-                    f"    a) Busca el producto con 'Search Products' para obtener ID y precio.\n"
-                    f"    b) NO compruebes inventario (nuestros productos siempre están disponibles).\n"
-                    f"    c) Crea pedido directamente con 'Create Sale Order' (necesitas nombre y teléfono del cliente).\n"
-                    f"    d) Tras crear pedido → genera factura con 'Create Invoice'.\n"
-                    f"    e) Tras pedido exitoso → envía email con 'Send Email'.\n"
+                    f"    a) Si el usuario es NUEVO, DEBES pedirle su nombre y email (si no te los ha dado ya) ANTES de procesar nada.\n"
+                    f"    b) Busca el producto con 'Search Products' para obtener ID y precio.\n"
+                    f"    c) NO compruebes inventario (nuestros productos siempre están disponibles).\n"
+                    f"    d) Crea pedido directamente con 'Create Sale Order' (necesitas nombre y teléfono del cliente).\n"
+                    f"    e) Tras crear pedido → genera factura con 'Create Invoice'.\n"
+                    f"    f) Tras pedido exitoso → envía email con 'Send Email'.\n"
                     f"- Si ya tienes los datos y propone una fecha/hora para reunión:\n"
                     f"    a) Valida con OdooCheckAvailabilityTool (RESTA {offset_hours}h para UTC).\n"
                     f"    b) Si está ocupado, proponle otro horario.\n"
@@ -172,7 +173,11 @@ def run_odoo_crew(session_id: str, user_message: str) -> str:
                 f"YA TIENES TODOS SUS DATOS. Si pide agendar reunión o hacer un pedido, usa directamente estos datos."
             )
         else:
-            crm_context = "El usuario es NUEVO, no está en nuestro CRM. Salúdalo cálidamente. Cuando sea necesario, averigua su nombre de forma natural."
+            crm_context = (
+                f"IDENTIDAD DEL USUARIO: Es un usuario NUEVO (no está en el CRM). "
+                f"NO TIENES su nombre ni su email, SOLO su teléfono actual ({session_id.split('_')[-1]}).\n"
+                f"INSTRUCCIÓN: Si el usuario quiere hacer un PEDIDO o AGENDAR REUNIÓN, es OBLIGATORIO que le pidas su nombre y email (o al menos su nombre) de forma amable ANTES de intentar usar las herramientas para crear el pedido o reunión."
+            )
 
         log.info("[STEP 4/6] Creating CrewAI tasks")
         tasks = create_tasks(session_id, user_message, chat_history, crm_context)
