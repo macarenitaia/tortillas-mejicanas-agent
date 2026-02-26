@@ -111,6 +111,15 @@ class TestAPIEndpoints:
         )
         assert response.status_code == 400
         assert "session_id" in response.json()["error"]
+        
+        # Test con caracteres imposibles de limpiar a un número válido
+        response_letters = self.client.post(
+            "/api/chat",
+            json={"session_id": "abcdefghijk", "message": "Hola"},
+            headers={"Authorization": "Bearer test-secret-123"}
+        )
+        assert response_letters.status_code == 400
+        assert "session_id" in response_letters.json()["error"]
 
     @patch("api.index.run_odoo_crew")
     def test_chat_success(self, mock_crew):
@@ -118,13 +127,13 @@ class TestAPIEndpoints:
         mock_crew.return_value = "¡Hola! Soy Sofía, tu asistente de Tortillas Mejicanas 🌮"
         response = self.client.post(
             "/api/chat",
-            json={"session_id": "34666000111", "message": "Hola"},
+            json={"session_id": "+34 666-000-111", "message": "Hola"},
             headers={"Authorization": "Bearer test-secret-123"}
         )
         assert response.status_code == 200
         data = response.json()
         assert "Tortillas" in data["reply"] or "Sofía" in data["reply"]
-        assert data["session_id"] == "34666000111"
+        assert data["session_id"] == "+34666000111"  # Formato E.164 limpio
 
     def test_webhook_get_verification(self):
         """GET /api/whatsapp verificación de webhook de Meta."""

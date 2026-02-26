@@ -6,11 +6,11 @@ import httpx
 import asyncio
 import hashlib
 import hmac
-import time
-from collections import defaultdict
-from typing import Dict, Tuple
-from pydantic import BaseModel, field_validator
+from typing import Dict
+from pydantic import BaseModel, field_validator, ValidationError
 import re
+
+from utils import normalize_phone
 
 # Añadir el directorio raíz al path para importar los módulos locales
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -166,10 +166,7 @@ class ChatRequest(BaseModel):
     def validate_session_id(cls, v: str) -> str:
         if v == "default_session" or not v:
             raise ValueError("session_id requerido")
-        clean = re.sub(r'[^\d+]', '', v)
-        if not re.match(r'^\+?\d{6,15}$', clean):
-            raise ValueError("session_id (teléfono) inválido. Debe contener entre 6 y 15 dígitos.")
-        return clean
+        return normalize_phone(v)
 
     @field_validator('message')
     @classmethod
@@ -194,12 +191,9 @@ async def chat(request: Request):
         data = await request.json()
         try:
             chat_req = ChatRequest(**data)
-        except ValueError as ve:
-            from pydantic import ValidationError
-            if isinstance(ve, ValidationError):
-                error_msgs = [err.get("msg") for err in ve.errors()]
-                return JSONResponse(status_code=400, content={"error": " | ".join(error_msgs)})
-            return JSONResponse(status_code=400, content={"error": str(ve)})
+        except ValidationError as ve:
+            error_msgs = [err.get("msg") for err in ve.errors()]
+            return JSONResponse(status_code=400, content={"error": " | ".join(error_msgs)})
             
         session_id = chat_req.session_id
         message = chat_req.message
@@ -308,12 +302,14 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
                                 log.warning("Received message without phone_number. Skipping.")
                                 continue
                             
+                            try:
+                                phone_number = normalize_phone(phone_number)
+                            except ValueError as e:
+                                log.warning(f"Invalid phone number {phone_number}: {e}")
+                                continue
+                            
                             message_id: str = message.get("id", "")
                             
-                            # --- Normalizar Formato E.164 básico ---
-                            if phone_number and not phone_number.startswith('+'):
-                                phone_number = f"+{phone_number}"
-                                
                             # --- Deduplicación ---
                             if message_id and message_dedup.is_duplicate(message_id):
                                 log.info(f"Duplicate message {message_id[:8]}*** skipped")

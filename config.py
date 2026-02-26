@@ -1,11 +1,14 @@
 import os
+from logger import get_logger
+
+log = get_logger("config")
 
 # --- Validación de entorno ---
 def _require_env(key: str) -> str:
     """Exige que una variable de entorno esté definida."""
     val = os.getenv(key, "")
     if not val:
-        print(f"[CONFIG WARNING] Variable de entorno '{key}' no definida.")
+        log.warning(f"Variable de entorno '{key}' no definida.")
     return val
 
 # --- Configuración General ---

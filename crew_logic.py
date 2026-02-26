@@ -11,6 +11,7 @@ import os
 from config import OPENAI_API_KEY, OPENAI_MODEL_NAME
 from datetime import datetime
 import pytz
+from utils import normalize_phone
 
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
@@ -144,6 +145,12 @@ def create_tasks(session_id, user_message, chat_history="", crm_context=""):
 
 def run_odoo_crew(session_id: str, user_message: str) -> str:
     try:
+        try:
+            session_id = normalize_phone(session_id)
+        except ValueError as e:
+            log.error(f"crew_logic received invalid session_id {session_id[:8]}***: {e}")
+            raise e
+            
         log.info(f"[STEP 1/6] Saving user message for session {session_id[:8]}***")
         save_message(session_id, "usuario", user_message)
         
