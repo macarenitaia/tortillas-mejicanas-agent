@@ -8,6 +8,9 @@ def _require_env(key: str) -> str:
         print(f"[CONFIG WARNING] Variable de entorno '{key}' no definida.")
     return val
 
+# --- Configuración General ---
+DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
+
 # Odoo Credentials
 ODOO_URL = _require_env("ODOO_URL")
 ODOO_DB = _require_env("ODOO_DB")

@@ -25,6 +25,8 @@ services:
         sync: false
       - key: OPENAI_MODEL_NAME
         value: gpt-4o-mini
+      - key: DEV_MODE
+        value: "false"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_KEY

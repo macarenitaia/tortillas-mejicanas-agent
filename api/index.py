@@ -17,7 +17,7 @@ from crew_logic import run_odoo_crew
 from config import (
     WHATSAPP_VERIFY_TOKEN, WHATSAPP_API_TOKEN,
     WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET,
-    API_SECRET_KEY
+    API_SECRET_KEY, DEV_MODE
 )
 from logger import get_logger
 
@@ -160,9 +160,11 @@ async def chat(request: Request):
     
     try:
         data = await request.json()
-        session_id: str = data.get("session_id", "default_session")
+        session_id: str = data.get("session_id", "")
         message: str = data.get("message", "")
         
+        if not session_id or session_id == "default_session":
+            return JSONResponse(status_code=400, content={"error": "session_id requerido"})
         if not message:
             return JSONResponse(status_code=400, content={"error": "Falta el mensaje"})
         if session_id == "default_session" or not session_id:
@@ -267,7 +269,7 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
                         message_id: str = message.get("id", "")
                         
                         # --- Deduplicación ---
-                        if message_dedup.is_duplicate(message_id):
+                        if message_id and message_dedup.is_duplicate(message_id):
                             log.info(f"Duplicate message {message_id[:8]}*** skipped")
                             continue
                         

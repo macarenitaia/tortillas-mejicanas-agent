@@ -1,6 +1,7 @@
 import xmlrpc.client
 import time
 from typing import Optional, Dict, List, Any
+from datetime import datetime, timedelta
 from config import ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, ODOO_API_KEY
 from logger import get_logger
 
@@ -146,10 +147,12 @@ class OdooClient:
 
     def schedule_meeting(self, partner_id: int, summary: str, start_date: str, duration: float = 1.0) -> int:
         """Agenda un evento en el calendario."""
+        dt_start = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
+        dt_stop = dt_start + timedelta(hours=duration)
         vals = {
             'name': summary,
             'start': start_date,
-            'stop': start_date,
+            'stop': dt_stop.strftime("%Y-%m-%d %H:%M:%S"),
             'duration': duration,
             'partner_ids': [(4, partner_id)]
         }
@@ -192,10 +195,13 @@ class OdooClient:
                 'type': 'opportunity'
             }])
 
+            dt_start = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
+            dt_stop = dt_start + timedelta(hours=duration)
+
             event_id = self._execute_kw_with_retry('calendar.event', 'create', [{
                 'name': f"Reunión Comercial: {name}",
                 'start': start_date,
-                'stop': start_date,
+                'stop': dt_stop.strftime("%Y-%m-%d %H:%M:%S"),
                 'duration': duration,
                 'partner_ids': [(4, partner_id)],
                 'opportunity_id': lead_id

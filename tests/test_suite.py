@@ -61,6 +61,13 @@ class TestAPIEndpoints:
         response = self.client.post("/api/chat", json={"message": "Hola"})
         assert response.status_code == 401
 
+    @patch("api.index.DEV_MODE", False)
+    def test_chat_without_auth_keys_strict_returns_401(self):
+        """Si falta el API_SECRET_KEY y no estamos en DEV_MODE, el endpoint rechaza todo."""
+        with patch("api.index.API_SECRET_KEY", ""):
+            response = self.client.post("/api/chat", json={"session_id": "12345", "message": "Hola"})
+            assert response.status_code == 401
+
     def test_chat_with_wrong_auth_returns_401(self):
         """POST /api/chat con token incorrecto devuelve 401."""
         response = self.client.post(
@@ -78,6 +85,22 @@ class TestAPIEndpoints:
             headers={"Authorization": "Bearer test-secret-123"}
         )
         assert response.status_code == 400
+
+    def test_chat_without_session_id_returns_400(self):
+        """POST /api/chat sin session_id o con default_session devuelve 400."""
+        response = self.client.post(
+            "/api/chat",
+            json={"message": "Hola"},
+            headers={"Authorization": "Bearer test-secret-123"}
+        )
+        assert response.status_code == 400
+        
+        response2 = self.client.post(
+            "/api/chat",
+            json={"session_id": "default_session", "message": "Hola"},
+            headers={"Authorization": "Bearer test-secret-123"}
+        )
+        assert response2.status_code == 400
 
     @patch("api.index.run_odoo_crew")
     def test_chat_success(self, mock_crew):
@@ -115,6 +138,21 @@ class TestAPIEndpoints:
             }
         )
         assert response.status_code == 403
+
+    @patch("api.index.DEV_MODE", False)
+    def test_webhook_post_missing_secret_strict_returns_403(self):
+        """POST /api/whatsapp falta clave secreta sin DEV_MODE devuelve 403."""
+        with patch("api.index.WHATSAPP_APP_SECRET", ""):
+            body = json.dumps({"object": "whatsapp_business_account", "entry": []})
+            response = self.client.post(
+                "/api/whatsapp",
+                content=body.encode(),
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Hub-Signature-256": "sha256=invalid"
+                }
+            )
+            assert response.status_code == 403
 
     def test_webhook_post_valid_signature(self):
         """POST /api/whatsapp con firma válida devuelve 200."""
