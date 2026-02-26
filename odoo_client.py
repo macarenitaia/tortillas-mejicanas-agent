@@ -402,3 +402,50 @@ class OdooClient:
             log.error(f"MRP creation failed: {type(e).__name__}: {e}")
             raise
 
+    # ==========================================
+    # UTILIDADES DE POBLACIÓN / PRUEBAS
+    # ==========================================
+
+    def create_product(self, name: str, price: float, sku: str = None) -> int:
+        """Crea un nuevo producto en Odoo."""
+        self._ensure_authenticated()
+        vals = {
+            'name': name,
+            'list_price': price,
+            'type': 'consu',
+            'default_code': sku,
+            'sale_ok': True,
+            'purchase_ok': True,
+        }
+        product_id = self.models.execute_kw(
+            self.db, self.uid, self.password,
+            'product.template', 'create', [vals]
+        )
+        return product_id
+
+    def update_product_stock(self, product_id: int, quantity: float):
+        """Actualiza el stock de un producto (requiere product.product ID)."""
+        self._ensure_authenticated()
+        try:
+            location_id = self.models.execute_kw(
+                self.db, self.uid, self.password,
+                'stock.location', 'search', [[['usage', '=', 'internal']]], {'limit': 1}
+            )[0]
+            
+            vals = {
+                'product_id': product_id,
+                'location_id': location_id,
+                'inventory_quantity': quantity,
+            }
+            quant_id = self.models.execute_kw(
+                self.db, self.uid, self.password,
+                'stock.quant', 'create', [vals]
+            )
+            self.models.execute_kw(
+                self.db, self.uid, self.password,
+                'stock.quant', 'action_apply_inventory', [quant_id]
+            )
+            return True
+        except Exception:
+            return False
+
