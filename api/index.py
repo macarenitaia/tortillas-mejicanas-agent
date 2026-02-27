@@ -242,7 +242,7 @@ async def send_whatsapp_message(phone_number: str, message_text: str) -> None:
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
-        "to": phone_number,
+        "to": phone_number.replace("+", ""), 
         "type": "text",
         "text": {"body": message_text}
     }
