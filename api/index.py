@@ -117,7 +117,7 @@ class MessageDedup:
         self._seen[message_id] = now
         return False
 
-message_dedup = MessageDedup(ttl_seconds=300)
+message_dedup = MessageDedup(ttl_seconds=86400) # 24 horas
 
 # ==========================================
 # HEALTH CHECK
@@ -333,7 +333,13 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
                             
                             message_id: str = message.get("id", "")
                             
-                            # --- Deduplicación ---
+                            # --- Validación de antiguedad (Prevenir retrys zombis de Meta) ---
+                            msg_timestamp = int(message.get("timestamp", 0))
+                            if msg_timestamp > 0 and (time.time() - msg_timestamp) > 300:
+                                log.info(f"Message {message_id[:8]}*** discarded (Too old: {time.time() - msg_timestamp:.0f}s). Probably a Meta retry.")
+                                continue
+                            
+                            # --- Deduplicación en memoria ---
                             if message_id and message_dedup.is_duplicate(message_id):
                                 log.info(f"Duplicate message {message_id[:8]}*** skipped")
                                 continue
