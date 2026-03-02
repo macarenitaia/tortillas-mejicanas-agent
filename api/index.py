@@ -127,6 +127,24 @@ message_dedup = MessageDedup(ttl_seconds=300)
 def root():
     return {"status": "ok", "service": "odoo-whatsapp-agent", "version": "1.0.0"}
 
+@app.get("/api/debug_env")
+def debug_env():
+    """Endpoint temporal para diagnosticar si las variables de entorno están cargadas en Render."""
+    def mask(val: str) -> str:
+        if not val:
+            return "❌ FALTA_CONFIGURAR"
+        if len(val) <= 4:
+            return "✅ CONFIGURADO (Muy Corto)"
+        return f"✅ CONFIGURADO (***{val[-4:]})"
+        
+    return {
+        "WHATSAPP_APP_SECRET": mask(WHATSAPP_APP_SECRET),
+        "WHATSAPP_API_TOKEN": mask(WHATSAPP_API_TOKEN),
+        "WHATSAPP_PHONE_NUMBER_ID": mask(WHATSAPP_PHONE_NUMBER_ID),
+        "API_SECRET_KEY": mask(API_SECRET_KEY),
+        "DEV_MODE": DEV_MODE
+    }
+
 @app.get("/api/health")
 async def health_check():
     """Health check con estado de dependencias externas."""
@@ -293,12 +311,15 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
                 for change in entry.get("changes", []):
                     value = change.get("value", {})
                     
-                    if "messages" in value:
-                        # Iterar sobre todos los mensajes en lugar de coger solo el originario
-                        for message in value.get("messages", []):
+                    msg_list = value.get("messages")
+                    if isinstance(msg_list, list):
+                        # Iterar sobre todos los mensajes
+                        for message in msg_list:
                             phone_number: str = message.get("from", "")
-                            if not phone_number and value.get("contacts"):
-                                phone_number = value["contacts"][0].get("wa_id", "")
+                            if not phone_number:
+                                contacts = value.get("contacts")
+                                if isinstance(contacts, list) and len(contacts) > 0:
+                                    phone_number = contacts[0].get("wa_id", "")
                             
                             if not phone_number:
                                 log.warning("Received message without phone_number. Skipping.")
