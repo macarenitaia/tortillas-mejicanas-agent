@@ -303,7 +303,14 @@ class OdooClient:
         order_name = order_data[0]['name'] if order_data else f"SO-{order_id}"
         amount = order_data[0].get('amount_total', 0) if order_data else 0
         
-        log.info(f"Sale order created: {order_name} (ID: {order_id}), total: {amount}")
+        # Opcional: Enviar email con el Presupuesto (Quotation PDF)
+        try:
+            self._execute_kw_with_retry('sale.order', 'action_quotation_send', [[order_id]])
+            log.info(f"Quotation email sent for order {order_id}")
+        except Exception as email_err:
+            log.warning(f"Failed to send quotation email for order {order_id}: {email_err}")
+            
+        log.info(f"Sale order (Quotation) created: {order_name} (ID: {order_id}), total: {amount}")
         return {'order_id': order_id, 'order_name': order_name, 'amount_total': amount}
 
     def confirm_sale_order(self, order_id: int) -> bool:

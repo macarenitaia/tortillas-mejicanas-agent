@@ -86,29 +86,21 @@ class CreateSaleOrderTool(BaseTool):
             # Actualizar dirección
             odoo._execute_kw_with_retry('res.partner', 'write', [[partner_id], {'street': address}])
             
-            # 2. Crear pedido con líneas
+            # 2. Crear pedido (Presupuesto) con líneas
             order_lines = [{'product_id': int(product_id), 'quantity': float(quantity)}]
             order = odoo.create_sale_order(partner_id, order_lines)
             
-            # 3. Confirmar el pedido (esto envía el email proforma/pedido inicial)
-            odoo.confirm_sale_order(order['order_id'])
-            
-            # 4. Auto-entregar y facturar
-            invoice_success = odoo.deliver_and_invoice_order(order['order_id'])
-            
-            # 5. Generar enlace de pago
+            # 3. Generar enlace de pago
             payment_link = odoo.generate_payment_link(order['order_id'], order['amount_total'])
             link_text = f"\n- Enlace de Pago Seguro: {payment_link}" if payment_link else ""
             
-            invoice_status = "El pedido ha sido procesado, entregado y facturado automáticamente." if invoice_success else "El pedido está confirmado."
-            
             return (
-                f"✅ Pedido creado exitosamente:\n"
+                f"✅ Presupuesto creado exitosamente:\n"
                 f"- Referencia: {order['order_name']}\n"
                 f"- Producto ID: {product_id} x {quantity} ud(s)\n"
                 f"- Total a pagar: {order['amount_total']:.2f}€\n"
                 f"- Dirección de Entrega: {address}\n"
-                f"{invoice_status} Se ha enviado un correo con los detalles.{link_text}"
+                f"El pedido se confirmará automáticamente al recibir el pago. Se ha enviado un correo con los detalles.{link_text}"
             )
         except Exception as e:
             log.error(f"CreateSaleOrderTool error: {type(e).__name__}: {e}")
